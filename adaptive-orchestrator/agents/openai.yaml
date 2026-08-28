@@ -1,0 +1,3 @@
+interface:
+  display_name: "Adaptive Orchestrator"
+  short_description: "Portable multi-agent planning and execution through a shared board"

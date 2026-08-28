@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "review_id",
+    "task",
+    "run_id",
+    "verdict",
+    "acceptance_criteria",
+    "blocking_findings",
+    "non_blocking_findings"
+  ]
+}

@@ -1,0 +1,2 @@
+# Claims
+Claim before execution. Claim contains task, claim ID, runtime, worker, created/heartbeat timestamps, lease seconds and attempt. A stale claim may be conservatively reclaimed only after preserving/inspecting evidence. Bundled exclusive-file creation coordinates contenders on a shared filesystem but is not a distributed-lock guarantee across delayed Git replicas. Competing claims discovered during reconciliation block automatic integration.

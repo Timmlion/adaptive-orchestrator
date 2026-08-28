@@ -1,0 +1,2 @@
+# Model Selection
+Filter hard requirements first; unknown does not satisfy required. Then choose the smallest/cheapest candidate expected to meet quality considering reasoning, coding, vision, tool use, context, latency and cost policy. Leaders specify capability requirements; current runtime maps them to available models. Record actual model only in runtime evidence. Prefer critic model-family diversity for high-risk work when equally suitable.

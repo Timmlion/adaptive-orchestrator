@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "name",
+    "goal",
+    "mode",
+    "phase"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "0.1"
+    },
+    "name": {
+      "type": "string"
+    },
+    "goal": {
+      "type": "string"
+    },
+    "mode": {
+      "enum": [
+        "autonomous",
+        "supervised"
+      ]
+    },
+    "phase": {
+      "enum": [
+        "planning",
+        "awaiting_approval",
+        "execution",
+        "integration",
+        "done",
+        "cancelled"
+      ]
+    }
+  }
+}

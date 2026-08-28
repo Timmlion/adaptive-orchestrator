@@ -1,0 +1,2 @@
+# Task Contract
+Require ID, title, department, objective, dependencies, context references, capability/tool requirements, execution policy, acceptance criteria and review policy. Each criterion has ID, description and verification method (`automated_test`, `inspection`, `artifact_check`, `integration_test`, `human_acceptance`). Do not bind portable definitions to a concrete model/worker. After freeze, material changes require a change request/revision trail.

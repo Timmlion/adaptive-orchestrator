@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "run_id",
+    "task",
+    "claim_id",
+    "executor",
+    "started_at",
+    "completed_at",
+    "result"
+  ]
+}

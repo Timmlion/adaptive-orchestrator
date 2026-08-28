@@ -1,0 +1,2 @@
+# Git Protocol
+Use Git for audit, transport, rollback, branches and worktree isolation, never as a lock manager. Prefer branch `agent/TASK-xxxx/RUN-xxxx` and a worktree for code-changing runs; record base/result commits. Keep the board logically canonical/shared. If machines synchronize the board via Git rather than a truly shared filesystem, treat merge conflicts/competing claims as reconciliation events.

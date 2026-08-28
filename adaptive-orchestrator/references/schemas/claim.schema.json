@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "task",
+    "claim_id",
+    "runtime_id",
+    "worker_id",
+    "created_at",
+    "heartbeat_at",
+    "lease_seconds",
+    "attempt"
+  ],
+  "properties": {
+    "task": {
+      "type": "string"
+    },
+    "claim_id": {
+      "type": "string"
+    },
+    "runtime_id": {
+      "type": "string"
+    },
+    "worker_id": {
+      "type": "string"
+    },
+    "created_at": {
+      "type": "string"
+    },
+    "heartbeat_at": {
+      "type": "string"
+    },
+    "lease_seconds": {
+      "type": "integer",
+      "minimum": 30
+    },
+    "attempt": {
+      "type": "integer",
+      "minimum": 1
+    }
+  }
+}
