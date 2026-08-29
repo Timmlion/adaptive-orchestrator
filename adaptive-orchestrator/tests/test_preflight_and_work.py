@@ -82,6 +82,36 @@ class PreflightAndWorkTests(unittest.TestCase):
             },
         }
 
+    def routing_environment(self):
+        profiles = [
+            ("fast", ["fast_worker", "coder", "escalation"], "standard", "low", {"coding": True, "vision": False}, "verified"),
+            ("deep", ["reasoner"], "advanced", "high", {"coding": True, "vision": True}, "unknown"),
+            ("critic", ["critic"], "standard", "medium", {"coding": True}, "verified"),
+        ]
+        return {
+            "runtime_id": "codex", "harness": "Codex", "capabilities": {"coding": True},
+            "tools": ["shell"], "models": [item[0] for item in profiles],
+            "autonomy": {"mode": "autopilot"}, "multi_harness": {"enabled": False, "harnesses": []},
+            "model_policy": {
+                "allowed_models": [item[0] for item in profiles],
+                "profiles": [
+                    {
+                        "id": model_id, "roles": roles, "quality_tier": quality,
+                        "relative_cost": cost, "capabilities": capabilities, "family": "test",
+                        "research": {
+                            "status": research, "confidence": "high",
+                            "sources": [] if research == "unknown" else [{
+                                "url": "https://example.com/" + model_id,
+                                "retrieved_at": "2026-08-29T12:00:00Z", "summary": "Verified.",
+                            }],
+                        },
+                    }
+                    for model_id, roles, quality, cost, capabilities, research in profiles
+                ],
+                "role_defaults": {"fast_worker": "fast", "coder": "fast", "reasoner": "deep", "critic": "critic", "escalation": "fast"},
+            },
+        }
+
     def write_task(self, board, task, status="READY"):
         (board / "tasks").mkdir(parents=True, exist_ok=True)
         (board / "state").mkdir(parents=True, exist_ok=True)
@@ -154,6 +184,117 @@ class PreflightAndWorkTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("model_policy", result.stderr)
         self.assertIn("research.sources.url", result.stderr)
+
+    def test_plan_work_routes_models_and_reports_gaps_without_mutation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            board = Path(directory)
+            environment = self.routing_environment()
+            environment_path = board / "environment" / "codex.json"
+            environment_path.parent.mkdir(parents=True)
+            environment_path.write_text(json.dumps(environment))
+            tasks = (
+                ("TASK-low", {"model_role": "coder", "model_complexity": "low"}),
+                ("TASK-deep", {"model_role": "reasoner", "model_complexity": "high"}),
+                ("TASK-vision", {"model_role": "coder", "required_model_capabilities": {"vision": True}}),
+                ("TASK-critic", {"model_role": "coder"}),
+            )
+            for task_id, execution in tasks:
+                task = {"id": task_id, "title": task_id, "dependencies": [], "requirements": {}, "execution": execution}
+                if task_id == "TASK-critic":
+                    task["review_policy"] = {"model_role": "critic", "independent_context": True}
+                self.write_task(board, task, status="PLANNED")
+
+            result = self.run_script("plan_work.py", "--board", str(board), "--runtime", "codex")
+
+            self.assertEqual(result.returncode, 1, result.stderr)
+            report = json.loads(result.stdout)
+            self.assertFalse((board / "claims").exists())
+
+        routes = {route["task"]: route for route in report["routes"]}
+        self.assertEqual(routes["TASK-low"]["model"], "fast")
+        self.assertEqual(routes["TASK-deep"]["model"], "deep")
+        self.assertEqual(routes["TASK-critic"]["model"], "critic")
+        self.assertEqual(routes["TASK-critic"]["role"], "critic")
+        self.assertEqual(report["capability_gaps"][0]["task"], "TASK-vision")
+        self.assertEqual(report["research_warnings"][0]["task"], "TASK-deep")
+
+    def test_plan_work_and_find_work_reject_invalid_routing_data_safely(self):
+        with tempfile.TemporaryDirectory() as directory:
+            board = Path(directory)
+            environment = self.routing_environment()
+            environment["model_policy"]["profiles"][0]["quality_tier"] = []
+            environment_path = board / "environment" / "codex.json"
+            environment_path.parent.mkdir(parents=True)
+            environment_path.write_text(json.dumps(environment))
+            task = {"id": "TASK-bad", "title": "Bad", "dependencies": [], "requirements": {}, "execution": []}
+            self.write_task(board, task, status="READY")
+
+            plan_result = self.run_script("plan_work.py", "--board", str(board), "--runtime", "codex")
+            find_result = self.run_script("find_work.py", "--board", str(board), "--runtime", "codex")
+
+        self.assertEqual(plan_result.returncode, 1, plan_result.stderr)
+        self.assertNotIn("Traceback", plan_result.stderr)
+        self.assertEqual(json.loads(plan_result.stdout)["status"], "blocked")
+        self.assertEqual(find_result.returncode, 0, find_result.stderr)
+        self.assertEqual(json.loads(find_result.stdout)["action"], "no_eligible_work")
+
+    def test_plan_work_blocks_malformed_execution_without_traceback(self):
+        with tempfile.TemporaryDirectory() as directory:
+            board = Path(directory)
+            environment = self.routing_environment()
+            environment_path = board / "environment" / "codex.json"
+            environment_path.parent.mkdir(parents=True)
+            environment_path.write_text(json.dumps(environment))
+            self.write_task(board, {
+                "id": "TASK-bad-execution", "title": "Bad execution", "dependencies": [],
+                "requirements": {}, "execution": [],
+            }, status="PLANNED")
+
+            result = self.run_script("plan_work.py", "--board", str(board), "--runtime", "codex")
+
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+        report = json.loads(result.stdout)
+        self.assertEqual(report["status"], "blocked")
+        self.assertIn("execution must be an object", report["blocked_tasks"][0]["reason"])
+
+    def test_find_work_rejects_missing_persisted_model_policy(self):
+        with tempfile.TemporaryDirectory() as directory:
+            board = Path(directory)
+            environment = self.routing_environment()
+            del environment["model_policy"]
+            environment_path = board / "environment" / "codex.json"
+            environment_path.parent.mkdir(parents=True)
+            environment_path.write_text(json.dumps(environment))
+            self.write_task(board, {
+                "id": "TASK-coding", "title": "Coding", "dependencies": [], "requirements": {},
+            })
+
+            result = self.run_script("find_work.py", "--board", str(board), "--runtime", "codex")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        report = json.loads(result.stdout)
+        self.assertEqual(report["action"], "no_eligible_work")
+        self.assertIn("model policy", report["diagnostics"][0])
+
+    def test_find_work_rejects_task_without_model_capability_candidate(self):
+        with tempfile.TemporaryDirectory() as directory:
+            board = Path(directory)
+            environment = self.routing_environment()
+            environment_path = board / "environment" / "codex.json"
+            environment_path.parent.mkdir(parents=True)
+            environment_path.write_text(json.dumps(environment))
+            self.write_task(board, {
+                "id": "TASK-vision", "title": "Vision", "dependencies": [], "requirements": {},
+                "execution": {"model_role": "coder", "required_model_capabilities": {"vision": True}},
+            })
+
+            result = self.run_script("find_work.py", "--board", str(board), "--runtime", "codex")
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        report = json.loads(result.stdout)
+        self.assertIn("TASK-vision", report["rejected"])
+        self.assertIn("capability", report["rejected"]["TASK-vision"])
 
     def test_find_work_returns_preferred_eligible_task(self):
         with tempfile.TemporaryDirectory() as directory:

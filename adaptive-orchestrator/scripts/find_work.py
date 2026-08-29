@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from boardlib import read, requirement_match
+from model_policy import route_task, validate_environment_policy
 
 
 SAFE_IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
@@ -61,6 +62,10 @@ def valid_environment(environment):
     tools = environment.get("tools")
     if not isinstance(tools, list) or not all(isinstance(tool, str) for tool in tools):
         return False, "tools must be an array of strings"
+    try:
+        validate_environment_policy(environment)
+    except ValueError as error:
+        return False, "invalid model policy: " + str(error)
     return True, None
 
 
@@ -170,6 +175,10 @@ for path in task_paths:
         continue
     if not matches:
         rejected[task_id] = reason
+        continue
+    _, model_gap = route_task(task, environment["model_policy"])
+    if model_gap is not None:
+        rejected[task_id] = model_gap["reason"]
         continue
     execution = task.get("execution", {})
     if not isinstance(execution, dict):

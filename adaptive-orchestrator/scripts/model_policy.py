@@ -5,10 +5,14 @@ from urllib.parse import urlparse
 
 
 ROLES = {"fast_worker", "coder", "reasoner", "critic", "escalation"}
+ROLE = ROLES
 QUALITY_TIERS = {"basic", "standard", "advanced"}
 RELATIVE_COSTS = {"low", "medium", "high", "unknown"}
 RESEARCH_STATUSES = {"verified", "unknown"}
 CONFIDENCES = {"low", "medium", "high"}
+QUALITY_MINIMUM = {"low": "basic", "medium": "standard", "high": "advanced"}
+QUALITY_RANK = {"basic": 0, "standard": 1, "advanced": 2}
+COST_RANK = {"low": 0, "medium": 1, "high": 2, "unknown": 3}
 
 
 def is_fact(value):
@@ -126,3 +130,131 @@ def validate_environment_policy(environment):
     if "model_policy" not in environment:
         raise ValueError("model_policy")
     validate_model_policy(environment["models"], environment["model_policy"])
+
+
+def _gap(task, role, reason, capability=None, candidates_checked=None):
+    return {
+        "task": task.get("id") if isinstance(task, dict) else None,
+        "role": role,
+        "capability": capability,
+        "reason": reason,
+        "candidates_checked": candidates_checked or [],
+    }
+
+
+def _task_route_requirements(task):
+    if not isinstance(task, dict):
+        return None, _gap(task, None, "task must be an object")
+    execution = task.get("execution", {})
+    if not isinstance(execution, dict):
+        return None, _gap(task, None, "execution must be an object")
+    review_policy = task.get("review_policy", {})
+    if not isinstance(review_policy, dict):
+        return None, _gap(task, None, "review_policy must be an object")
+    role = execution.get("model_role", "coder")
+    complexity = execution.get("model_complexity", "medium")
+    required_capabilities = execution.get("required_model_capabilities", {})
+    if not isinstance(role, str) or role not in ROLES:
+        return None, _gap(task, None, "execution.model_role is invalid")
+    if not isinstance(complexity, str) or complexity not in QUALITY_MINIMUM:
+        return None, _gap(task, role, "execution.model_complexity is invalid")
+    if not isinstance(required_capabilities, dict):
+        return None, _gap(task, role, "execution.required_model_capabilities must be an object")
+    independent_context = review_policy.get("independent_context", False)
+    if not isinstance(independent_context, bool):
+        return None, _gap(task, role, "review_policy.independent_context must be boolean")
+    review_role = review_policy.get("model_role")
+    if review_role is not None and (not isinstance(review_role, str) or review_role not in ROLES):
+        return None, _gap(task, role, "review_policy.model_role is invalid")
+    if independent_context:
+        role = review_role or "critic"
+    return (role, complexity, {name for name, value in required_capabilities.items() if value is True}, independent_context), None
+
+
+def route_task(task, policy):
+    """Return a deterministic route and optional capability/policy gap for one task."""
+    requirements, gap = _task_route_requirements(task)
+    if gap is not None:
+        return None, gap
+    role, complexity, required_capabilities, independent_context = requirements
+    try:
+        validate_model_policy(policy.get("allowed_models"), policy)
+    except (AttributeError, KeyError, TypeError, ValueError) as error:
+        return None, _gap(task, role, "invalid model policy: " + str(error))
+    candidates = []
+    checked = []
+    for profile in policy["profiles"]:
+        profile_id = profile["id"]
+        checked.append(profile_id)
+        if role not in profile["roles"]:
+            continue
+        if QUALITY_RANK[profile["quality_tier"]] < QUALITY_RANK[QUALITY_MINIMUM[complexity]]:
+            continue
+        missing = next((name for name in sorted(required_capabilities) if profile["capabilities"].get(name) is not True), None)
+        if missing is not None:
+            continue
+        candidates.append(profile)
+    if not candidates:
+        missing_capability = next(iter(sorted(required_capabilities)), None)
+        reason = "no eligible model for role " + role
+        if missing_capability is not None:
+            reason += " with required capability " + missing_capability
+        return None, _gap(task, role, reason, missing_capability, checked)
+    selected = min(candidates, key=lambda profile: (COST_RANK[profile["relative_cost"]], profile["id"]))
+    return {
+        "task": task.get("id"),
+        "model": selected["id"],
+        "role": role,
+        "model_complexity": complexity,
+        "independent_context": independent_context,
+        "research_status": selected["research"]["status"],
+    }, None
+
+
+def plan_projection(environment, tasks, states, runtime):
+    """Produce a JSON-safe, read-only routing projection for planned work."""
+    report = {
+        "status": "ready",
+        "runtime": runtime,
+        "routes": [],
+        "capability_gaps": [],
+        "blocked_tasks": [],
+        "research_warnings": [],
+        "summary": {},
+    }
+    try:
+        validate_environment_policy(environment)
+    except (KeyError, TypeError, ValueError) as error:
+        report["status"] = "blocked"
+        report["blocked_tasks"].append({"task": None, "reason": "invalid environment policy: " + str(error)})
+        report["summary"] = {"routed": 0, "gaps": 0, "blocked": 1, "research_warnings": 0}
+        return report
+    if not isinstance(tasks, list):
+        tasks = []
+    if not isinstance(states, dict):
+        states = {}
+    for task in tasks:
+        if not isinstance(task, dict):
+            continue
+        task_id = task.get("id")
+        state = states.get(task_id, {})
+        status = state.get("status") if isinstance(state, dict) else None
+        if status not in {"PLANNED", "READY"}:
+            continue
+        route, gap = route_task(task, environment["model_policy"])
+        if gap is not None:
+            report["capability_gaps"].append(gap)
+            if status == "PLANNED":
+                report["status"] = "blocked"
+                report["blocked_tasks"].append({"task": task_id, "reason": gap["reason"]})
+            continue
+        report["routes"].append(route)
+        if route["research_status"] == "unknown":
+            report["research_warnings"].append({"task": task_id, "model": route["model"], "reason": "model research is unknown"})
+    report["summary"] = {
+        "routed": len(report["routes"]),
+        "gaps": len(report["capability_gaps"]),
+        "blocked": len(report["blocked_tasks"]),
+        "research_warnings": len(report["research_warnings"]),
+    }
+    return report
