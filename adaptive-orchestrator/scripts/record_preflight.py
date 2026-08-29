@@ -4,9 +4,10 @@ import re
 from pathlib import Path
 
 from boardlib import write_atomic
+from model_policy import validate_model_policy
 
 
-REQUIRED = {"runtime_id", "harness", "capabilities", "tools", "models", "autonomy", "multi_harness"}
+REQUIRED = {"runtime_id", "harness", "capabilities", "tools", "models", "model_policy", "autonomy", "multi_harness"}
 RUNTIME_ID = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
@@ -34,6 +35,10 @@ def validate(data):
         fail("capabilities must map names to true, false, or unknown")
     strings(data["tools"], "tools")
     strings(data["models"], "models")
+    try:
+        validate_model_policy(data["models"], data["model_policy"])
+    except ValueError as error:
+        fail(f"model_policy: {error}")
     autonomy = data["autonomy"]
     if not isinstance(autonomy, dict) or autonomy.get("mode") not in {"autopilot", "ask"}:
         fail("autonomy mode must be autopilot or ask")

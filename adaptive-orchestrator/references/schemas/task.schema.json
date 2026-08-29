@@ -47,6 +47,16 @@
         "preferred_runtime": {
           "type": "string",
           "description": "Optional scheduling preference; never a hard eligibility requirement."
+        },
+        "model_role": {
+          "enum": ["fast_worker", "coder", "reasoner", "critic", "escalation"]
+        },
+        "model_complexity": {
+          "enum": ["basic", "standard", "advanced"]
+        },
+        "required_model_capabilities": {
+          "type": "object",
+          "additionalProperties": {"const": true}
         }
       }
     },
@@ -62,7 +72,15 @@
       }
     },
     "review_policy": {
-      "type": "object"
+      "type": "object",
+      "properties": {
+        "model_role": {
+          "enum": ["fast_worker", "coder", "reasoner", "critic", "escalation"]
+        },
+        "independent_context": {
+          "type": "boolean"
+        }
+      }
     }
   }
 }

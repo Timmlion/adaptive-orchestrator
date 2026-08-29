@@ -26,12 +26,61 @@ class PreflightAndWorkTests(unittest.TestCase):
             "capabilities": {"coding": True},
             "tools": ["shell"],
             "models": ["gpt"],
+            "model_policy": self.valid_model_policy(),
             "autonomy": {"mode": "autopilot"},
             "multi_harness": {"enabled": False, "harnesses": []},
         }
         path = board / "environment" / f"{runtime}.json"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(environment))
+
+    def valid_model_policy(self):
+        return {
+            "allowed_models": ["gpt"],
+            "profiles": [
+                {
+                    "id": "gpt",
+                    "roles": ["fast_worker", "coder", "reasoner", "critic", "escalation"],
+                    "quality_tier": "advanced",
+                    "relative_cost": "high",
+                    "capabilities": {"coding": True, "vision": "unknown"},
+                    "family": "GPT",
+                    "research": {
+                        "status": "verified",
+                        "confidence": "high",
+                        "sources": [
+                            {
+                                "url": "https://example.com/models/gpt",
+                                "retrieved_at": "2026-08-29T12:00:00Z",
+                                "summary": "Verified model profile.",
+                            }
+                        ],
+                    },
+                }
+            ],
+            "role_defaults": {
+                "fast_worker": "gpt",
+                "coder": "gpt",
+                "reasoner": "gpt",
+                "critic": "gpt",
+                "escalation": "gpt",
+            },
+        }
+
+    def valid_preflight_payload(self):
+        return {
+            "runtime_id": "codex",
+            "harness": "Codex",
+            "capabilities": {"vision": True, "browser": "unknown"},
+            "tools": ["shell"],
+            "models": ["gpt"],
+            "model_policy": self.valid_model_policy(),
+            "autonomy": {"mode": "ask", "level": "manager"},
+            "multi_harness": {
+                "enabled": True,
+                "harnesses": [{"runtime_id": "claude", "purpose": "planning"}],
+            },
+        }
 
     def write_task(self, board, task, status="READY"):
         (board / "tasks").mkdir(parents=True, exist_ok=True)
@@ -44,18 +93,7 @@ class PreflightAndWorkTests(unittest.TestCase):
     def test_record_preflight_persists_ask_manager_and_multi_harness(self):
         with tempfile.TemporaryDirectory() as directory:
             board = Path(directory)
-            payload = {
-                "runtime_id": "codex",
-                "harness": "Codex",
-                "capabilities": {"vision": True, "browser": "unknown"},
-                "tools": ["shell"],
-                "models": ["gpt"],
-                "autonomy": {"mode": "ask", "level": "manager"},
-                "multi_harness": {
-                    "enabled": True,
-                    "harnesses": [{"runtime_id": "claude", "purpose": "planning"}],
-                },
-            }
+            payload = self.valid_preflight_payload()
             result = self.run_script(
                 "record_preflight.py", "--board", str(board), "--json", json.dumps(payload)
             )
@@ -66,6 +104,40 @@ class PreflightAndWorkTests(unittest.TestCase):
         self.assertEqual(saved["autonomy"], {"mode": "ask", "level": "manager"})
         self.assertTrue(saved["multi_harness"]["enabled"])
         self.assertEqual(saved["multi_harness"]["harnesses"][0]["runtime_id"], "claude")
+
+    def test_record_preflight_persists_valid_model_policy(self):
+        with tempfile.TemporaryDirectory() as directory:
+            board = Path(directory)
+            payload = self.valid_preflight_payload()
+            result = self.run_script(
+                "record_preflight.py", "--board", str(board), "--json", json.dumps(payload)
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            saved = json.loads((board / "environment" / "codex.json").read_text())
+
+        self.assertEqual(saved["model_policy"], payload["model_policy"])
+
+    def test_record_preflight_rejects_invalid_model_policies(self):
+        cases = (
+            ("allowed_missing_raw", lambda policy: policy.update({"allowed_models": ["other"]}), "allowed_models"),
+            ("duplicate_allowed", lambda policy: policy.update({"allowed_models": ["gpt", "gpt"]}), "allowed_models"),
+            ("profile_outside_allowlist", lambda policy: policy["profiles"][0].update({"id": "other"}), "profiles"),
+            ("invalid_capability_fact", lambda policy: policy["profiles"][0]["capabilities"].update({"coding": "probably"}), "capabilities"),
+            ("verified_without_sources", lambda policy: policy["profiles"][0]["research"].update({"sources": []}), "research"),
+            ("role_default_without_role", lambda policy: policy["profiles"][0]["roles"].remove("coder"), "role_defaults"),
+        )
+        for name, mutate, expected_error in cases:
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
+                payload = self.valid_preflight_payload()
+                mutate(payload["model_policy"])
+                result = self.run_script(
+                    "record_preflight.py", "--board", directory, "--json", json.dumps(payload)
+                )
+
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("model_policy", result.stderr)
+                self.assertIn(expected_error, result.stderr)
 
     def test_find_work_returns_preferred_eligible_task(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -166,7 +238,8 @@ class PreflightAndWorkTests(unittest.TestCase):
                 "harness": "Codex",
                 "capabilities": {},
                 "tools": [],
-                "models": [],
+                "models": ["gpt"],
+                "model_policy": self.valid_model_policy(),
                 "autonomy": {"mode": "autopilot"},
                 "multi_harness": {
                     "enabled": True,
