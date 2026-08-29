@@ -55,6 +55,19 @@ def get(port, path):
 
 
 class DashboardTests(unittest.TestCase):
+    def routing_environment(self):
+        return {
+            "models": ["fast", "deep"],
+            "model_policy": {
+                "allowed_models": ["fast", "deep"],
+                "profiles": [
+                    {"id": "fast", "roles": ["fast_worker", "coder", "escalation"], "quality_tier": "standard", "relative_cost": "low", "capabilities": {"coding": True}, "family": "test", "research": {"status": "verified", "confidence": "high", "sources": [{"url": "https://example.com/fast", "retrieved_at": "2026-08-29T12:00:00Z", "summary": "Verified."}]}},
+                    {"id": "deep", "roles": ["reasoner", "critic"], "quality_tier": "advanced", "relative_cost": "high", "capabilities": {"coding": True}, "family": "test", "research": {"status": "unknown", "confidence": "medium", "sources": []}},
+                ],
+                "role_defaults": {"fast_worker": "fast", "coder": "fast", "reasoner": "deep", "critic": "deep", "escalation": "fast"},
+            },
+        }
+
     def test_generator_writes_shell_that_loads_live_api_client(self):
         with tempfile.TemporaryDirectory() as directory:
             board = Path(directory) / ".agent-board"
@@ -75,6 +88,13 @@ class DashboardTests(unittest.TestCase):
         self.assertIn('id="reviews"', index)
         self.assertIn("snapshot.runs", app)
         self.assertIn("snapshot.reviews", app)
+        for element_id in ("plan-summary", "model-policy", "model-routes", "capability-gaps"):
+            self.assertIn(f'id="{element_id}"', index)
+        for reference in ("snapshot.environments", "snapshot.plan", "research_warnings", "capability_gaps"):
+            self.assertIn(reference, app)
+        self.assertIn("No confirmed model policy yet", app)
+        self.assertIn("No capability gaps", app)
+        self.assertNotIn("innerHTML", app)
         self.assertNotIn("project.json", index + app)
 
     def test_api_reads_project_changes_without_dashboard_rebuild(self):
@@ -105,6 +125,20 @@ class DashboardTests(unittest.TestCase):
                 self.assertIn("project.json: missing", diagnostics)
                 self.assertTrue(any(item.startswith("tasks/broken.json:") for item in diagnostics))
 
+    def test_api_returns_valid_json_for_malformed_environment(self):
+        with tempfile.TemporaryDirectory() as directory:
+            board = Path(directory) / ".agent-board"
+            environment = board / "environment" / "codex.json"
+            environment.parent.mkdir(parents=True)
+            environment.write_text("{")
+            with running_server(board) as (_, port):
+                status, _, body = get(port, "/api/board")
+
+        snapshot = json.loads(body)
+        self.assertEqual(status, 200)
+        self.assertEqual(snapshot["environments"], {})
+        self.assertTrue(any(item.startswith("environment/codex.json:") for item in snapshot["diagnostics"]))
+
     def test_api_returns_valid_json_when_snapshot_has_non_finite_values(self):
         with tempfile.TemporaryDirectory() as directory:
             board = Path(directory) / ".agent-board"
@@ -118,6 +152,28 @@ class DashboardTests(unittest.TestCase):
         self.assertEqual(headers["Content-Type"], "application/json; charset=utf-8")
         self.assertEqual(headers["Cache-Control"], "no-store")
         self.assertIn("error", json.loads(body))
+
+    def test_api_refreshes_model_routes_after_task_complexity_changes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            board = Path(directory) / ".agent-board"
+            board.mkdir()
+            environment = board / "environment" / "codex.json"
+            environment.parent.mkdir()
+            environment.write_text(json.dumps(self.routing_environment()))
+            task = board / "tasks" / "TASK-a.json"
+            task.parent.mkdir()
+            task.write_text(json.dumps({"id": "TASK-a", "execution": {"model_role": "coder", "model_complexity": "medium"}}))
+            state = board / "state" / "TASK-a.json"
+            state.parent.mkdir()
+            state.write_text(json.dumps({"status": "READY"}))
+
+            with running_server(board) as (_, port):
+                _, _, body = get(port, "/api/board")
+                self.assertEqual(json.loads(body)["plan"]["codex"]["routes"][0]["model"], "fast")
+
+                task.write_text(json.dumps({"id": "TASK-a", "execution": {"model_role": "reasoner", "model_complexity": "high"}}))
+                _, _, body = get(port, "/api/board")
+                self.assertEqual(json.loads(body)["plan"]["codex"]["routes"][0]["model"], "deep")
 
 
 if __name__ == "__main__":

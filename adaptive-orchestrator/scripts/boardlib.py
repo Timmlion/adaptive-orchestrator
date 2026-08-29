@@ -1,6 +1,7 @@
 from pathlib import Path
 from datetime import datetime, timezone
 import json, os, uuid
+from model_policy import plan_projection
 STATUSES={"PLANNED","READY","CLAIMED","IN_PROGRESS","IN_REVIEW","REVISION_REQUIRED","BLOCKED","WAITING_FOR_HUMAN","WAITING_FOR_EXTERNAL","DONE","CANCELLED"}
 TRANSITIONS={"PLANNED":{"READY","BLOCKED","CANCELLED"},"READY":{"CLAIMED","BLOCKED","WAITING_FOR_HUMAN","WAITING_FOR_EXTERNAL","CANCELLED"},"CLAIMED":{"IN_PROGRESS","READY","BLOCKED","CANCELLED"},"IN_PROGRESS":{"IN_REVIEW","BLOCKED","CANCELLED"},"IN_REVIEW":{"DONE","REVISION_REQUIRED","BLOCKED"},"REVISION_REQUIRED":{"READY","CANCELLED"},"BLOCKED":{"READY","CANCELLED"},"WAITING_FOR_HUMAN":{"READY","DONE","CANCELLED"},"WAITING_FOR_EXTERNAL":{"READY","DONE","CANCELLED"},"DONE":set(),"CANCELLED":set()}
 def now(): return datetime.now(timezone.utc).isoformat()
@@ -64,4 +65,21 @@ def board_snapshot(board):
    if not isinstance(project,dict):
     diagnostics.append('project.json: expected object');project=None
  else:diagnostics.append('project.json: missing')
- return {'project':project,'tasks':_records(board,'tasks',diagnostics),'states':_records(board,'state',diagnostics,True),'claims':_records(board,'claims',diagnostics),'runs':_records(board,'runs',diagnostics),'reviews':_records(board,'reviews',diagnostics),'diagnostics':diagnostics}
+ tasks=_records(board,'tasks',diagnostics)
+ states=_records(board,'state',diagnostics,True)
+ environments=_records(board,'environment',diagnostics,True)
+ plan={}
+ for runtime,environment in environments.items():
+  try:
+   projection=plan_projection(environment,tasks,states,runtime)
+  except Exception as error:
+   diagnostics.append(f'environment/{runtime}.json: model_policy: {error}')
+   projection={'status':'blocked','runtime':runtime,'routes':[],'capability_gaps':[],'blocked_tasks':[{'task':None,'reason':'invalid environment policy'}],'research_warnings':[],'summary':{'routed':0,'gaps':0,'blocked':1,'research_warnings':0}}
+  if projection.get('status')=='blocked':
+   blocked=projection.get('blocked_tasks',[])
+   if blocked and isinstance(blocked[0],dict):
+    reason=blocked[0].get('reason','invalid environment policy')
+    if isinstance(reason,str) and reason.startswith('invalid environment policy: '):
+     diagnostics.append(f'environment/{runtime}.json: model_policy: {reason.removeprefix("invalid environment policy: ")}')
+  plan[runtime]=projection
+ return {'project':project,'tasks':tasks,'states':states,'claims':_records(board,'claims',diagnostics),'runs':_records(board,'runs',diagnostics),'reviews':_records(board,'reviews',diagnostics),'environments':environments,'plan':plan,'diagnostics':diagnostics}

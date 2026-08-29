@@ -58,6 +58,19 @@ class RequirementMatchTests(unittest.TestCase):
 
 
 class BoardSnapshotTests(unittest.TestCase):
+    def routing_environment(self):
+        return {
+            "models": ["fast", "deep"],
+            "model_policy": {
+                "allowed_models": ["fast", "deep"],
+                "profiles": [
+                    {"id": "fast", "roles": ["fast_worker", "coder", "escalation"], "quality_tier": "standard", "relative_cost": "low", "capabilities": {"coding": True}, "family": "test", "research": {"status": "verified", "confidence": "high", "sources": [{"url": "https://example.com/fast", "retrieved_at": "2026-08-29T12:00:00Z", "summary": "Verified."}]}},
+                    {"id": "deep", "roles": ["reasoner", "critic"], "quality_tier": "advanced", "relative_cost": "high", "capabilities": {"coding": True}, "family": "test", "research": {"status": "unknown", "confidence": "medium", "sources": []}},
+                ],
+                "role_defaults": {"fast_worker": "fast", "coder": "fast", "reasoner": "deep", "critic": "deep", "escalation": "fast"},
+            },
+        }
+
     def test_reads_board_records_and_nested_runs_without_diagnostics(self):
         with tempfile.TemporaryDirectory() as directory:
             board = Path(directory)
@@ -102,6 +115,38 @@ class BoardSnapshotTests(unittest.TestCase):
         self.assertEqual(snapshot["states"], {})
         self.assertIn("tasks/TASK-a.json: expected object", snapshot["diagnostics"])
         self.assertIn("state/TASK-a.json: expected object", snapshot["diagnostics"])
+
+    def test_includes_environments_and_model_routes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            board = Path(directory)
+            environment = board / "environment" / "codex.json"
+            environment.parent.mkdir()
+            environment.write_text(json.dumps(self.routing_environment()))
+            for relative_path, record in {
+                "tasks/TASK-a.json": {"id": "TASK-a", "execution": {"model_role": "reasoner", "model_complexity": "high"}},
+                "state/TASK-a.json": {"status": "READY"},
+            }.items():
+                path = board / relative_path
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(json.dumps(record))
+
+            snapshot = board_snapshot(board)
+
+        self.assertEqual(snapshot["environments"]["codex"], self.routing_environment())
+        self.assertEqual(snapshot["plan"]["codex"]["status"], "ready")
+        self.assertEqual(snapshot["plan"]["codex"]["routes"][0]["model"], "deep")
+
+    def test_invalid_environment_has_blocked_plan_and_diagnostic(self):
+        with tempfile.TemporaryDirectory() as directory:
+            board = Path(directory)
+            environment = board / "environment" / "codex.json"
+            environment.parent.mkdir()
+            environment.write_text(json.dumps({"models": ["gpt"], "model_policy": {}}))
+
+            snapshot = board_snapshot(board)
+
+        self.assertEqual(snapshot["plan"]["codex"]["status"], "blocked")
+        self.assertTrue(any(item.startswith("environment/codex.json: model_policy") for item in snapshot["diagnostics"]))
 
 
 class SkillContractTests(unittest.TestCase):
