@@ -28,6 +28,8 @@ def load_records(board, directory, diagnostics, keyed=False):
         value = load_object(path, directory + "/" + path.name, diagnostics)
         if value is None:
             continue
+        if directory == "tasks" and not isinstance(value.get("id"), str):
+            diagnostics.append(directory + "/" + path.name + ": task id must be a string")
         if keyed:
             records[path.stem] = value
         else:

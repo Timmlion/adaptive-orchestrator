@@ -8,6 +8,8 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "scripts"))
+from model_policy import route_task
 
 
 class PreflightAndWorkTests(unittest.TestCase):
@@ -257,6 +259,50 @@ class PreflightAndWorkTests(unittest.TestCase):
         report = json.loads(result.stdout)
         self.assertEqual(report["status"], "blocked")
         self.assertIn("execution must be an object", report["blocked_tasks"][0]["reason"])
+
+    def test_plan_work_blocks_ready_capability_gap(self):
+        with tempfile.TemporaryDirectory() as directory:
+            board = Path(directory)
+            environment_path = board / "environment" / "codex.json"
+            environment_path.parent.mkdir(parents=True)
+            environment_path.write_text(json.dumps(self.routing_environment()))
+            self.write_task(board, {
+                "id": "TASK-ready-vision", "title": "Vision", "dependencies": [], "requirements": {},
+                "execution": {"model_role": "coder", "required_model_capabilities": {"vision": True}},
+            }, status="READY")
+
+            result = self.run_script("plan_work.py", "--board", str(board), "--runtime", "codex")
+
+        self.assertEqual(result.returncode, 1, result.stderr)
+        report = json.loads(result.stdout)
+        self.assertEqual(report["status"], "blocked")
+        self.assertEqual(report["blocked_tasks"][0]["task"], "TASK-ready-vision")
+
+    def test_plan_work_blocks_list_task_id_without_traceback(self):
+        with tempfile.TemporaryDirectory() as directory:
+            board = Path(directory)
+            environment_path = board / "environment" / "codex.json"
+            environment_path.parent.mkdir(parents=True)
+            environment_path.write_text(json.dumps(self.routing_environment()))
+            self.write_task(board, {
+                "id": ["bad"], "title": "Bad id", "dependencies": [], "requirements": {}, "execution": {},
+            }, status="READY")
+
+            result = self.run_script("plan_work.py", "--board", str(board), "--runtime", "codex")
+
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+        report = json.loads(result.stdout)
+        self.assertEqual(report["status"], "blocked")
+        self.assertTrue(report["diagnostics"])
+
+    def test_route_task_rejects_non_string_capability_keys(self):
+        route, gap = route_task({
+            "id": "TASK-bad-capability", "execution": {"required_model_capabilities": {1: True}},
+        }, self.routing_environment()["model_policy"])
+
+        self.assertIsNone(route)
+        self.assertIn("required_model_capabilities", gap["reason"])
 
     def test_find_work_rejects_missing_persisted_model_policy(self):
         with tempfile.TemporaryDirectory() as directory:

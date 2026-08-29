@@ -145,6 +145,8 @@ def _gap(task, role, reason, capability=None, candidates_checked=None):
 def _task_route_requirements(task):
     if not isinstance(task, dict):
         return None, _gap(task, None, "task must be an object")
+    if not _nonempty_string(task.get("id")):
+        return None, _gap(task, None, "task.id must be a non-empty string")
     execution = task.get("execution", {})
     if not isinstance(execution, dict):
         return None, _gap(task, None, "execution must be an object")
@@ -160,6 +162,8 @@ def _task_route_requirements(task):
         return None, _gap(task, role, "execution.model_complexity is invalid")
     if not isinstance(required_capabilities, dict):
         return None, _gap(task, role, "execution.required_model_capabilities must be an object")
+    if not all(_nonempty_string(name) for name in required_capabilities):
+        return None, _gap(task, role, "execution.required_model_capabilities keys must be non-empty strings")
     independent_context = review_policy.get("independent_context", False)
     if not isinstance(independent_context, bool):
         return None, _gap(task, role, "review_policy.independent_context must be boolean")
@@ -237,6 +241,12 @@ def plan_projection(environment, tasks, states, runtime):
         if not isinstance(task, dict):
             continue
         task_id = task.get("id")
+        if not _nonempty_string(task_id):
+            _, gap = route_task(task, environment["model_policy"])
+            report["capability_gaps"].append(gap)
+            report["status"] = "blocked"
+            report["blocked_tasks"].append({"task": None, "reason": gap["reason"]})
+            continue
         state = states.get(task_id, {})
         status = state.get("status") if isinstance(state, dict) else None
         if status not in {"PLANNED", "READY"}:
@@ -244,9 +254,8 @@ def plan_projection(environment, tasks, states, runtime):
         route, gap = route_task(task, environment["model_policy"])
         if gap is not None:
             report["capability_gaps"].append(gap)
-            if status == "PLANNED":
-                report["status"] = "blocked"
-                report["blocked_tasks"].append({"task": task_id, "reason": gap["reason"]})
+            report["status"] = "blocked"
+            report["blocked_tasks"].append({"task": task_id, "reason": gap["reason"]})
             continue
         report["routes"].append(route)
         if route["research_status"] == "unknown":
