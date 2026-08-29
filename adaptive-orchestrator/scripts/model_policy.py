@@ -31,12 +31,15 @@ def _string_list(value, field):
         raise ValueError(field)
 
 
+def _enum(value, allowed, field):
+    if not isinstance(value, str) or value not in allowed:
+        raise ValueError(field)
+
+
 def _validate_research(research):
     _exact_keys(research, {"status", "confidence", "sources"}, "research")
-    if research["status"] not in RESEARCH_STATUSES:
-        raise ValueError("research.status")
-    if research["confidence"] not in CONFIDENCES:
-        raise ValueError("research.confidence")
+    _enum(research["status"], RESEARCH_STATUSES, "research.status")
+    _enum(research["confidence"], CONFIDENCES, "research.confidence")
     sources = research["sources"]
     if not isinstance(sources, list):
         raise ValueError("research.sources")
@@ -46,7 +49,10 @@ def _validate_research(research):
         _exact_keys(source, {"url", "retrieved_at", "summary"}, "research.sources")
         if not _nonempty_string(source["url"]):
             raise ValueError("research.sources.url")
-        parsed_url = urlparse(source["url"])
+        try:
+            parsed_url = urlparse(source["url"])
+        except ValueError:
+            raise ValueError("research.sources.url")
         if parsed_url.scheme not in {"http", "https"} or not parsed_url.netloc:
             raise ValueError("research.sources.url")
         if not _nonempty_string(source["summary"]):
@@ -91,10 +97,8 @@ def validate_model_policy(models, policy):
         _string_list(roles, "profiles.roles")
         if not roles or not set(roles).issubset(ROLES):
             raise ValueError("profiles.roles")
-        if profile["quality_tier"] not in QUALITY_TIERS:
-            raise ValueError("profiles.quality_tier")
-        if profile["relative_cost"] not in RELATIVE_COSTS:
-            raise ValueError("profiles.relative_cost")
+        _enum(profile["quality_tier"], QUALITY_TIERS, "profiles.quality_tier")
+        _enum(profile["relative_cost"], RELATIVE_COSTS, "profiles.relative_cost")
         capabilities = profile["capabilities"]
         if not isinstance(capabilities, dict) or not all(is_fact(value) for value in capabilities.values()):
             raise ValueError("profiles.capabilities")

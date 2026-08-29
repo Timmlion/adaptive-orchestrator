@@ -124,8 +124,11 @@ class PreflightAndWorkTests(unittest.TestCase):
             ("duplicate_allowed", lambda policy: policy.update({"allowed_models": ["gpt", "gpt"]}), "allowed_models"),
             ("profile_outside_allowlist", lambda policy: policy["profiles"][0].update({"id": "other"}), "profiles"),
             ("invalid_capability_fact", lambda policy: policy["profiles"][0]["capabilities"].update({"coding": "probably"}), "capabilities"),
+            ("non_string_quality_tier", lambda policy: policy["profiles"][0].update({"quality_tier": []}), "quality_tier"),
+            ("non_string_research_status", lambda policy: policy["profiles"][0]["research"].update({"status": []}), "research.status"),
             ("verified_without_sources", lambda policy: policy["profiles"][0]["research"].update({"sources": []}), "research"),
             ("role_default_without_role", lambda policy: policy["profiles"][0]["roles"].remove("coder"), "role_defaults"),
+            ("malformed_bracketed_url", lambda policy: policy["profiles"][0]["research"]["sources"][0].update({"url": "https://[bad"}), "research.sources.url"),
         )
         for name, mutate, expected_error in cases:
             with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
@@ -138,6 +141,7 @@ class PreflightAndWorkTests(unittest.TestCase):
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn("model_policy", result.stderr)
                 self.assertIn(expected_error, result.stderr)
+                self.assertNotIn("Traceback", result.stderr)
 
     def test_record_preflight_rejects_malformed_verified_research_url(self):
         with tempfile.TemporaryDirectory() as directory:
