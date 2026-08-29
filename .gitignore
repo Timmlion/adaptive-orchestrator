@@ -7,3 +7,5 @@ venv/
 
 # Local board state (runtime artifacts — never commit working boards)
 .agent-board/
+# macOS
+.DS_Store
