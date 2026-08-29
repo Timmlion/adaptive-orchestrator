@@ -1,47 +1,64 @@
 ---
 name: adaptive-orchestrator
-description: Orchestrate complex multi-agent projects through a portable file-based Agent Board Protocol. Use for autonomous or supervised planning and execution, resuming shared projects, coordinating specialized leaders/workers/critics/humans across agent harnesses, capability-aware model selection, concurrent task claiming, review, Git-isolated implementation, integration, and a disposable static dashboard backed by shared .agent-board JSON files.
+description: Use when starting, resuming, or coordinating a complex project through a shared file-based agent board, including optional multi-harness work allocation and a live JSON project dashboard.
 ---
 # Adaptive Orchestrator
-Use `.agent-board/` as durable shared state. Agents communicate through task contracts, artifacts, runs, reviews, decisions, and claims rather than conversational handoffs.
 
-## Modes
-- **autonomously create**: plan, execute, review, integrate, finish; stop only for genuine human-only blockers.
-- **plan and loop me in for acceptance**: finish planning/red-team, materialize board/dashboard, request approval, then execute.
-- **resume**: validate the existing board, run current-harness preflight, recover stale work conservatively, continue; never re-plan from scratch.
+`.agent-board/` is durable shared state. Agents exchange task contracts, claims, runs, reviews and decisions through JSON files; conversation and the dashboard are never sources of truth.
 
-## Protocol
-1. Locate a valid shared board or initialize one with `scripts/init_board.py`. Never create a private copy when a canonical board exists.
-2. Run preflight before planning/claiming. Record only verified harness, model, tool, vision, subagent and parallelism capabilities; write unknown when unverifiable. Read `references/preflight.md`.
-3. Appoint one Program Director. Create the smallest set of departments that can deliver the goal.
-4. Run planning council rounds: proposals, affected-domain cross-review, blocking-conflict resolution, independent red-team. Freeze only when no blocking objections/critical unknowns remain and the dependency DAG is valid. Read `references/planning.md`.
-5. Materialize portable task contracts. Specify required capabilities, tools, dependencies, context, acceptance criteria and verification, not concrete model names. Read `references/task-contract.md`.
-6. Validate with `scripts/validate_board.py` before execution.
-7. Query READY work with `scripts/list_ready_tasks.py`. Filter hard requirements, then choose the smallest/cheapest model expected to meet required quality. Unknown never satisfies a hard requirement. Read `references/model-selection.md`.
-8. Claim before agent execution with `scripts/claim_task.py`. Treat claims as leases and execution as at-least-once. Read `references/claiming.md`.
-9. Build minimal worker context: task, parent goal, direct dependencies, relevant decisions/files, latest blocking review feedback. Never dump the whole board by default.
-10. Execute code-changing work in an isolated Git branch/worktree when possible. Record append-only run evidence and actual runtime/model. Read `references/execution.md` and `references/git-protocol.md`.
-11. Review deterministic checks first, then critic if policy requires it. Critics judge frozen acceptance criteria, explicit constraints, regressions and correctness/safety defects. Separate blocking from non-blocking findings. Read `references/reviewing.md`.
-12. Bound retries: two worker revisions, one stronger/different suitable model, then leader, then Director for re-plan/human/cancel.
-13. Integrate accepted work separately and run cross-task/system verification. Create reconciliation tasks for semantic conflicts. Read `references/integration.md`.
-14. Generate `dashboard/index.html` with `scripts/build_dashboard.py`. UI is a disposable projection, never source of truth.
+## Entry decision
 
-## Concurrency invariants
-- Freeze `tasks/*.json` after plan acceptance; runtime facts belong in `state/`, `claims/`, `runs/`, `reviews/`.
-- Keep runs/reviews append-only and use unique IDs.
-- Require a valid claim before execution. Competing claims block automatic integration until reconciled.
-- Use Git for history, transport, audit and worktree isolation, never as a distributed lock manager.
-- Do not promise exactly-once execution. Preserve duplicate/conflicting evidence.
+1. Look for `.agent-board/` in the project folder.
+2. If it is absent, ask exactly: **What are we building?** Then ask only the preflight questions needed for that goal. Initialize the board with `scripts/init_board.py` and persist verified current-runtime facts with `scripts/record_preflight.py`.
+3. If it exists, do not ask for the goal again. Run `scripts/validate_board.py`, inspect project/task/state/claim/run/review JSON, and report completed work, blockers and the next available work. Record a fresh current-harness preflight when facts changed or are missing.
+4. Ensure the live panel exists with `scripts/build_dashboard.py`; start it through `scripts/serve_dashboard.py` when the user wants to view it.
+
+## Adaptive preflight
+
+Ask sequentially after the goal. Record only verified abilities; use `unknown` when verification is unavailable.
+
+- Identify the current harness, selectable models, tools and capabilities.
+- Ask whether execution is `autopilot` or `ask`.
+- For `ask`, ask for the decision threshold: `CEO` (strategy, scope, risk, release), `manager` (also material implementation/integration trade-offs), or `full_control` (including small execution decisions).
+- Ask whether multi-harness coordination is needed. Default to a single harness and allocate across its verified models.
+- If multi-harness is enabled, gather each known harness, its verified capabilities and intended purpose or load-balancing role. These are preferences, not proof of current availability.
+
+`autopilot` proceeds without ordinary approval, but never overrides a human-only blocker, a destructive/out-of-scope action, or explicit consent required for cross-harness task takeover.
+
+## Planning and execution
+
+1. Appoint one Program Director and the smallest useful departments.
+2. Run proposal, affected-domain review, blocking-conflict resolution and independent red-team; freeze only with a valid dependency DAG and no critical unknowns. Read `references/planning.md`.
+3. Materialize portable task contracts. Put hard capabilities/tools in `requirements`; put only an optional runtime preference in `execution.preferred_runtime`. Never bind a contract to a concrete model. Read `references/task-contract.md`.
+4. Validate the board with `scripts/validate_board.py`.
+5. Ask `scripts/find_work.py --runtime <runtime>` for work. It first returns compatible READY work preferred for this runtime. If none exists but a compatible task prefers another harness, it returns `ask_to_take_over` with the reason. Explain that proposal and wait for explicit user approval before invoking `scripts/claim_task.py`; do not automatically take it over.
+6. Claim before execution, use the narrowest useful worker context, record actual runtime/model/run evidence, then review against frozen criteria. Read `references/claiming.md`, `references/execution.md` and `references/reviewing.md`.
+7. Integrate accepted work separately and perform cross-task verification. Read `references/integration.md`.
+
+## Dashboard
+
+Run `scripts/build_dashboard.py` whenever `dashboard/index.html` or `dashboard/app.js` is absent. Those disposable assets contain no board data and never write JSON.
+
+Run `scripts/serve_dashboard.py --board .agent-board`; it exposes a loopback-only, read-only `/api/board` projection constructed from current JSON files on each request. `app.js` refreshes it periodically. A missing or malformed JSON record must be shown as diagnostics, not silently repaired by the panel.
+
+## Invariants
+
+- Freeze `tasks/*.json` after plan acceptance; runtime facts belong in `state/`, `claims/`, `runs/` and `reviews/`.
+- Runs and reviews are append-only. Claims are leases, not distributed locks; preserve conflicting evidence.
+- Unknown or malformed environment facts never satisfy hard requirements.
+- An active claim blocks automatic work selection. Expired or malformed claims require reconciliation; do not silently reclaim them.
+- Git is for history and isolated worktrees, never locking.
 
 ## Commands
-`python scripts/init_board.py --name "Project" --goal "Goal"`
-`python scripts/validate_board.py`
-`python scripts/list_ready_tasks.py`
-`python scripts/claim_task.py TASK-0001 --runtime R --worker W`
-`python scripts/claim_task.py TASK-0001 --runtime R --worker W --heartbeat`
-`python scripts/release_task.py TASK-0001 --runtime R`
-`python scripts/transition_task.py TASK-0001 IN_PROGRESS --runtime R`
-`python scripts/record_run.py TASK-0001 --runtime R --worker W --summary "..."`
-`python scripts/build_dashboard.py`
 
-Read `references/protocol.md` for layout/state semantics. Schemas are in `references/schemas/`.
+```sh
+python3 scripts/init_board.py --name "Project" --goal "Goal" --autonomy autopilot
+python3 scripts/record_preflight.py --json '{...}'
+python3 scripts/validate_board.py
+python3 scripts/find_work.py --runtime R
+python3 scripts/claim_task.py TASK-0001 --runtime R --worker W
+python3 scripts/build_dashboard.py
+python3 scripts/serve_dashboard.py --board .agent-board
+```
+
+Read `references/protocol.md` for layout/state semantics and `references/schemas/` for JSON contracts.
