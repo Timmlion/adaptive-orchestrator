@@ -90,8 +90,10 @@ class DashboardTests(unittest.TestCase):
         self.assertIn("snapshot.reviews", app)
         for element_id in ("plan-summary", "model-policy", "model-routes", "capability-gaps"):
             self.assertIn(f'id="{element_id}"', index)
-        for reference in ("snapshot.environments", "snapshot.plan", "research_warnings", "capability_gaps"):
+        for reference in ("snapshot.environments", "snapshot.plan", "plan.summary", "research_warnings", "capability_gaps"):
             self.assertIn(reference, app)
+        for summary_field in ("routed", "gaps", "blocked", "research_warnings"):
+            self.assertIn(summary_field, app)
         self.assertIn("No confirmed model policy yet", app)
         self.assertIn("No capability gaps", app)
         self.assertNotIn("innerHTML", app)

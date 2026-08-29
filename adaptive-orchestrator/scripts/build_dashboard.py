@@ -49,6 +49,7 @@ APP = """(function () {
   const setText = (id, value) => { document.getElementById(id).textContent = text(value); };
   const records = (value) => Array.isArray(value) ? value.filter((item) => item && typeof item === "object") : [];
   const object = (value) => value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  const count = (value) => Number.isFinite(value) && value >= 0 ? value : 0;
 
   function appendLine(container, value) {
     const line = document.createElement("p");
@@ -98,6 +99,8 @@ APP = """(function () {
       const plan = object(plans[runtime]);
       const autonomy = object(environment.autonomy);
       appendLine(summary, runtime + ": " + text(plan.status || "unknown") + (autonomy.mode ? "; autonomy " + autonomy.mode : ""));
+      const planSummary = object(plan.summary);
+      appendLine(summary, "routed " + count(planSummary.routed) + "; gaps " + count(planSummary.gaps) + "; blocked tasks " + count(planSummary.blocked) + "; research warnings " + count(planSummary.research_warnings));
 
       const policy = object(environment.model_policy);
       const allowed = Array.isArray(policy.allowed_models) ? policy.allowed_models : [];
