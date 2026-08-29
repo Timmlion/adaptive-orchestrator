@@ -9,3 +9,6 @@ venv/
 .agent-board/
 # macOS
 .DS_Store
+
+# Local superpowers bootstrap notes
+adaptive-orchestrator/docs/
