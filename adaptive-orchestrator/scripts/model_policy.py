@@ -1,6 +1,7 @@
 """Validation helpers for persisted environment model policies."""
 
 from datetime import datetime
+from urllib.parse import urlparse
 
 
 ROLES = {"fast_worker", "coder", "reasoner", "critic", "escalation"}
@@ -44,6 +45,9 @@ def _validate_research(research):
     for source in sources:
         _exact_keys(source, {"url", "retrieved_at", "summary"}, "research.sources")
         if not _nonempty_string(source["url"]):
+            raise ValueError("research.sources.url")
+        parsed_url = urlparse(source["url"])
+        if parsed_url.scheme not in {"http", "https"} or not parsed_url.netloc:
             raise ValueError("research.sources.url")
         if not _nonempty_string(source["summary"]):
             raise ValueError("research.sources.summary")

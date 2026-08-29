@@ -139,6 +139,18 @@ class PreflightAndWorkTests(unittest.TestCase):
                 self.assertIn("model_policy", result.stderr)
                 self.assertIn(expected_error, result.stderr)
 
+    def test_record_preflight_rejects_malformed_verified_research_url(self):
+        with tempfile.TemporaryDirectory() as directory:
+            payload = self.valid_preflight_payload()
+            payload["model_policy"]["profiles"][0]["research"]["sources"][0]["url"] = "not-a-url"
+            result = self.run_script(
+                "record_preflight.py", "--board", directory, "--json", json.dumps(payload)
+            )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("model_policy", result.stderr)
+        self.assertIn("research.sources.url", result.stderr)
+
     def test_find_work_returns_preferred_eligible_task(self):
         with tempfile.TemporaryDirectory() as directory:
             board = Path(directory)

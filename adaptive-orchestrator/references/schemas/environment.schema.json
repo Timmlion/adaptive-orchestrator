@@ -71,7 +71,7 @@
                       "additionalProperties": false,
                       "required": ["url", "retrieved_at", "summary"],
                       "properties": {
-                        "url": {"type": "string", "minLength": 1},
+                        "url": {"type": "string", "minLength": 1, "format": "uri", "pattern": "^https?://"},
                         "retrieved_at": {"type": "string", "format": "date-time"},
                         "summary": {"type": "string", "minLength": 1}
                       }
