@@ -1,3 +1,4 @@
 interface:
   display_name: "Adaptive Orchestrator"
-  short_description: "Portable multi-agent planning and execution through a shared board"
+  short_description: "Goal-first orchestration with adaptive preflight and a live JSON board"
+  default_prompt: "Start or resume an Agent Board project with adaptive preflight."

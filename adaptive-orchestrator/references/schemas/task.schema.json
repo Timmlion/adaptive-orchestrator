@@ -42,7 +42,13 @@
       "type": "object"
     },
     "execution": {
-      "type": "object"
+      "type": "object",
+      "properties": {
+        "preferred_runtime": {
+          "type": "string",
+          "description": "Optional scheduling preference; never a hard eligibility requirement."
+        }
+      }
     },
     "acceptance_criteria": {
       "type": "array",

@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "runtime_id",
+    "harness",
+    "capabilities",
+    "tools",
+    "models",
+    "autonomy",
+    "multi_harness"
+  ],
+  "properties": {
+    "runtime_id": {"type": "string", "minLength": 1},
+    "harness": {"type": "string", "minLength": 1},
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": {"anyOf": [{"type": "boolean"}, {"const": "unknown"}]}
+    },
+    "tools": {"type": "array", "items": {"type": "string"}},
+    "models": {"type": "array", "items": {"type": "string"}},
+    "autonomy": {
+      "type": "object",
+      "required": ["mode"],
+      "properties": {
+        "mode": {"enum": ["autopilot", "ask"]},
+        "level": {"enum": ["CEO", "manager", "full_control"]}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"mode": {"const": "ask"}}, "required": ["mode"]},
+          "then": {"required": ["level"]}
+        }
+      ]
+    },
+    "multi_harness": {
+      "type": "object",
+      "required": ["enabled", "harnesses"],
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "harnesses": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["runtime_id", "purpose"],
+            "properties": {
+              "runtime_id": {"type": "string"},
+              "purpose": {"type": "string"},
+              "capabilities": {"type": "object"},
+              "tools": {"type": "array", "items": {"type": "string"}}
+            }
+          }
+        }
+      }
+    }
+  }
+}
