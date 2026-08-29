@@ -1,10 +1,10 @@
 # Adaptive Orchestrator
 
-A portable, file-based **Agent Board Protocol** for orchestrating complex multi-agent projects — planning, claiming, execution, review, integration, and a disposable static dashboard — across any agent harness.
+A portable, file-based **Agent Board Protocol** for orchestrating complex multi-agent projects — goal-first preflight, planning, claiming, execution, review, integration, and a live read-only dashboard — across agent harnesses.
 
 Agents communicate through **task contracts, artifacts, runs, reviews, decisions, and claims** written as shared `.agent-board/` JSON files, rather than fragile conversational handoffs. The board is durable shared state any agent can join, resume, or hand off mid-project.
 
-> This repository ships `adaptive-orchestrator` as a **Hermes-compatible skill**. The skill folder (`adaptive-orchestrator/`) is self-contained: drop it into your skills directory and use the scripts straight from a shell — no framework required.
+> The self-contained skill lives in `adaptive-orchestrator/`. Install that folder in a harness-supported skill directory, invoke `adaptive-orchestrator`, and it will either bootstrap a new board or resume an existing one. The bundled scripts also work directly from a shell.
 
 ---
 
@@ -26,26 +26,30 @@ The board lives in a directory named `.agent-board/`:
 
 | Path | Purpose |
 |---|---|
-| `.agent-board/board.json` | Project metadata, departments, decision log. |
+| `.agent-board/protocol.json` | Protocol identity and version. |
+| `.agent-board/project.json` | Project name, goal, phase and execution mode. |
+| `.agent-board/environment/` | Verified harness capabilities, models, autonomy policy and multi-harness inventory. |
 | `.agent-board/tasks/*.json` | Frozen task contracts after plan acceptance. |
 | `.agent-board/claims/` | Worker leases (claim → release). |
 | `.agent-board/runs/` | Append-only execution evidence and actual runtime/model. |
 | `.agent-board/reviews/` | Append-only review findings (blocking vs non-blocking). |
 | `.agent-board/state/` | Runtime facts that evolve during execution. |
-| `.agent-board/dashboard/` | Disposable static HTML projection of board state. |
+| `.agent-board/decisions/` | Durable planning and reconciliation decisions. |
+| `.agent-board/dashboard/` | Disposable HTML/JS panel; never source of truth. |
 
 ### Lifecycle
 
-1. **Init** — `init_board.py` creates a valid board.
-2. **Preflight** — verify harness/model/tool capabilities; record only what is verified.
+1. **Enter** — if no board exists, the skill asks “What are we building?”; otherwise it audits and summarizes the existing board.
+2. **Preflight** — verify harness/model/tool capabilities and record autonomy (`autopilot`, CEO, manager or full control) plus optional multi-harness roles.
 3. **Plan** — planning council: proposals → cross-review → conflict resolution → red-team; freeze when the dependency DAG is valid.
 4. **Contract** — materialize portable task contracts (capabilities, deps, acceptance criteria, verification).
 5. **Validate** — `validate_board.py` before any execution.
-6. **Claim** — workers claim tasks as leases, then execute at-least-once.
-7. **Execute** — code-changing work goes in an isolated Git branch/worktree; record append-only run evidence.
-8. **Review** — deterministic checks first, critic if policy requires; separate blocking from non-blocking.
-9. **Integrate** — accepted work merged separately; cross-task verification; reconciliation tasks for conflicts.
-10. **Dashboard** — `build_dashboard.py` renders a read-only projection (never a source of truth).
+6. **Find work** — select compatible READY work for the current harness. Cross-harness work is only proposed and requires explicit human approval before takeover.
+7. **Claim** — workers claim approved tasks as leases, then execute at-least-once.
+8. **Execute** — code-changing work goes in an isolated Git branch/worktree; record append-only run evidence.
+9. **Review** — deterministic checks first, critic if policy requires; separate blocking from non-blocking.
+10. **Integrate** — accepted work merged separately; cross-task verification; reconciliation tasks for conflicts.
+11. **Dashboard** — `build_dashboard.py` writes disposable assets and `serve_dashboard.py` serves a fresh, read-only JSON projection to the panel.
 
 ### Concurrency invariants
 
@@ -60,25 +64,31 @@ The board lives in a directory named `.agent-board/`:
 ## Quick start
 
 ```bash
-# Initialize a board
-python scripts/init_board.py --name "Project" --goal "Goal"
+# Run these from adaptive-orchestrator/
+cd adaptive-orchestrator
+
+# Initialize a board and persist verified preflight facts
+python3 scripts/init_board.py --name "Project" --goal "Goal" --autonomy autopilot
+python3 scripts/record_preflight.py --json '{"runtime_id":"local","harness":"Local","capabilities":{},"tools":[],"models":[],"autonomy":{"mode":"autopilot"},"multi_harness":{"enabled":false,"harnesses":[]}}'
 
 # Validate the board before doing anything
-python scripts/validate_board.py
+python3 scripts/validate_board.py
 
-# Find work that is ready to execute
-python scripts/list_ready_tasks.py
+# Find compatible work. `ask_to_take_over` requires user approval.
+python3 scripts/find_work.py --runtime local
 
-# Claim a task (lease) and mark a heartbeat
-python scripts/claim_task.py TASK-0001 --runtime R --worker W --heartbeat
+# Claim first, then mark a heartbeat only for that existing claim.
+python3 scripts/claim_task.py TASK-0001 --runtime R --worker W
+python3 scripts/claim_task.py TASK-0001 --runtime R --worker W --heartbeat
 
 # Release after review, transition state, record evidence
-python scripts/release_task.py TASK-0001 --runtime R
-python scripts/transition_task.py TASK-0001 IN_PROGRESS --runtime R
-python scripts/record_run.py TASK-0001 --runtime R --worker W --summary "..."
+python3 scripts/release_task.py TASK-0001 --runtime R
+python3 scripts/transition_task.py TASK-0001 IN_PROGRESS --runtime R
+python3 scripts/record_run.py TASK-0001 --runtime R --worker W --summary "..."
 
-# Render the dashboard
-python scripts/build_dashboard.py
+# Create and view the live, read-only dashboard
+python3 scripts/build_dashboard.py
+python3 scripts/serve_dashboard.py --board .agent-board
 ```
 
 ---
@@ -89,7 +99,7 @@ python scripts/build_dashboard.py
 adaptive-orchestrator/
 ├── SKILL.md                    # Protocol overview + operating manual
 ├── agents/
-│   └── openai.yaml             # Example agent declaration
+│   └── openai.yaml             # Optional Codex/ChatGPT UI metadata
 ├── references/                 # Detailed protocol guides
 │   ├── claiming.md             #   Lease semantics
 │   ├── execution.md            #   Append-only execution evidence
@@ -103,21 +113,26 @@ adaptive-orchestrator/
 │   ├── task-contract.md        #   Portable task contract format
 │   └── schemas/                #   JSON schemas for board artifacts
 │       ├── claim.schema.json
+│       ├── environment.schema.json
 │       ├── project.schema.json
 │       ├── review.schema.json
 │       ├── run.schema.json
 │       ├── state.schema.json
 │       └── task.schema.json
-└── scripts/                    # Reference CLI (Python stdlib, no deps)
+├── scripts/                    # Reference CLI (Python stdlib, no deps)
     ├── init_board.py
+    ├── record_preflight.py
     ├── validate_board.py
+    ├── find_work.py
     ├── list_ready_tasks.py
     ├── claim_task.py
     ├── release_task.py
     ├── transition_task.py
     ├── record_run.py
     ├── build_dashboard.py
+    ├── serve_dashboard.py
     └── boardlib.py             # Shared board operations
+└── tests/                      # Regression coverage for the bundled tools
 ```
 
 ---
@@ -125,7 +140,7 @@ adaptive-orchestrator/
 ## Requirements
 
 - Python 3.8+ (standard library only — no third-party dependencies)
-- A `git` remote for transport/audit when executing code-changing tasks
+- Git is recommended for isolated code-changing work; a remote is optional
 
 ---
 
