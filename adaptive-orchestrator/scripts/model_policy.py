@@ -164,6 +164,8 @@ def _task_route_requirements(task):
         return None, _gap(task, role, "execution.required_model_capabilities must be an object")
     if not all(_nonempty_string(name) for name in required_capabilities):
         return None, _gap(task, role, "execution.required_model_capabilities keys must be non-empty strings")
+    if not all(value is True for value in required_capabilities.values()):
+        return None, _gap(task, role, "execution.required_model_capabilities values must be true")
     independent_context = review_policy.get("independent_context", False)
     if not isinstance(independent_context, bool):
         return None, _gap(task, role, "review_policy.independent_context must be boolean")

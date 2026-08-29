@@ -304,6 +304,66 @@ class PreflightAndWorkTests(unittest.TestCase):
         self.assertIsNone(route)
         self.assertIn("required_model_capabilities", gap["reason"])
 
+    def test_task_schema_and_plan_work_use_routing_complexity_vocabulary(self):
+        schema = json.loads((ROOT / "references" / "schemas" / "task.schema.json").read_text())
+        self.assertEqual(schema["properties"]["execution"]["properties"]["model_complexity"]["enum"], ["low", "medium", "high"])
+        self.assertNotIn("advanced", schema["properties"]["execution"]["properties"]["model_complexity"]["enum"])
+        with tempfile.TemporaryDirectory() as directory:
+            board = Path(directory)
+            environment_path = board / "environment" / "codex.json"
+            environment_path.parent.mkdir(parents=True)
+            environment_path.write_text(json.dumps(self.routing_environment()))
+            for task_id, execution in (
+                ("TASK-low-complexity", {"model_role": "coder", "model_complexity": "low"}),
+                ("TASK-medium-complexity", {"model_role": "coder", "model_complexity": "medium"}),
+                ("TASK-high-complexity", {"model_role": "reasoner", "model_complexity": "high"}),
+                ("TASK-advanced-complexity", {"model_role": "coder", "model_complexity": "advanced"}),
+            ):
+                self.write_task(board, {"id": task_id, "title": task_id, "dependencies": [], "requirements": {}, "execution": execution}, status="READY")
+
+            result = self.run_script("plan_work.py", "--board", str(board), "--runtime", "codex")
+
+        self.assertEqual(result.returncode, 1, result.stderr)
+        report = json.loads(result.stdout)
+        self.assertEqual({item["task"] for item in report["routes"]}, {"TASK-low-complexity", "TASK-medium-complexity", "TASK-high-complexity"})
+        self.assertIn("model_complexity is invalid", report["capability_gaps"][0]["reason"])
+
+    def test_malformed_required_model_capabilities_block_planning_and_find_work(self):
+        for value in (False, "not-true", "unknown"):
+            with self.subTest(value=value), tempfile.TemporaryDirectory() as directory:
+                board = Path(directory)
+                environment_path = board / "environment" / "codex.json"
+                environment_path.parent.mkdir(parents=True)
+                environment_path.write_text(json.dumps(self.routing_environment()))
+                self.write_task(board, {
+                    "id": "TASK-invalid-capability", "title": "Invalid capability", "dependencies": [], "requirements": {},
+                    "execution": {"required_model_capabilities": {"vision": value}},
+                }, status="READY")
+
+                plan_result = self.run_script("plan_work.py", "--board", str(board), "--runtime", "codex")
+                find_result = self.run_script("find_work.py", "--board", str(board), "--runtime", "codex")
+
+                self.assertEqual(plan_result.returncode, 1, plan_result.stderr)
+                report = json.loads(plan_result.stdout)
+                self.assertEqual(report["status"], "blocked")
+                self.assertIn("required_model_capabilities values must be true", report["capability_gaps"][0]["reason"])
+                self.assertEqual(find_result.returncode, 0, find_result.stderr)
+                self.assertIn("required_model_capabilities values must be true", json.loads(find_result.stdout)["rejected"]["TASK-invalid-capability"])
+
+    def test_plan_work_rejects_absolute_runtime_without_reading_outside_board(self):
+        with tempfile.TemporaryDirectory() as directory:
+            board = Path(directory) / "board"
+            outside_environment = Path(directory) / "outside.json"
+            outside_environment.write_text(json.dumps(self.routing_environment()))
+
+            result = self.run_script("plan_work.py", "--board", str(board), "--runtime", str(outside_environment.with_suffix("")))
+
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+        report = json.loads(result.stdout)
+        self.assertEqual(report["status"], "blocked")
+        self.assertIn("invalid runtime", report["blocked_tasks"][0]["reason"])
+
     def test_find_work_rejects_missing_persisted_model_policy(self):
         with tempfile.TemporaryDirectory() as directory:
             board = Path(directory)

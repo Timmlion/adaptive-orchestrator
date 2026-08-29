@@ -1,8 +1,12 @@
 import argparse
 import json
+import re
 from pathlib import Path
 
 from model_policy import plan_projection
+
+
+SAFE_IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
 
 
 def load_object(path, relative, diagnostics):
@@ -41,6 +45,18 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--board", default=".agent-board")
 parser.add_argument("--runtime", required=True)
 args = parser.parse_args()
+if not SAFE_IDENTIFIER.fullmatch(args.runtime):
+    report = {
+        "status": "blocked",
+        "runtime": args.runtime,
+        "routes": [],
+        "capability_gaps": [],
+        "blocked_tasks": [{"task": None, "reason": "invalid runtime identifier"}],
+        "research_warnings": [],
+        "summary": {"routed": 0, "gaps": 0, "blocked": 1, "research_warnings": 0},
+    }
+    print(json.dumps(report, indent=2, sort_keys=True))
+    raise SystemExit(1)
 board = Path(args.board)
 diagnostics = []
 environment = load_object(board / "environment" / (args.runtime + ".json"), "environment/" + args.runtime + ".json", diagnostics)

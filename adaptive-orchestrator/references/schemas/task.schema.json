@@ -52,7 +52,7 @@
           "enum": ["fast_worker", "coder", "reasoner", "critic", "escalation"]
         },
         "model_complexity": {
-          "enum": ["basic", "standard", "advanced"]
+          "enum": ["low", "medium", "high"]
         },
         "required_model_capabilities": {
           "type": "object",
