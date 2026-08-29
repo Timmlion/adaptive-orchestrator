@@ -51,6 +51,88 @@ The board lives in a directory named `.agent-board/`:
 10. **Integrate** — accepted work merged separately; cross-task verification; reconciliation tasks for conflicts.
 11. **Dashboard** — `build_dashboard.py` writes disposable assets and `serve_dashboard.py` serves a fresh, read-only JSON projection to the panel.
 
+## How the skill works
+
+The skill is not a central agent daemon. It is a reusable operating procedure for an agent, plus a shared JSON board and small deterministic helper scripts.
+
+```mermaid
+flowchart TD
+    A["Invoke adaptive-orchestrator"] --> B{".agent-board exists?"}
+    B -- "no" --> C["Ask: What are we building?"]
+    C --> D["Run adaptive preflight"]
+    D --> E["Create board and plan task contracts"]
+    B -- "yes" --> F["Audit existing board and summarize status"]
+    E --> G["Find compatible READY work"]
+    F --> G
+    G --> H["Claim approved task"]
+    H --> I["Execute, record evidence, review, integrate"]
+    I --> J["Dashboard reads current JSON state"]
+```
+
+### 1. Start or resume
+
+When invoked, the skill first looks for `.agent-board/` in the project directory.
+
+- **No board:** it asks **“What are we building?”**, then runs preflight before planning.
+- **Existing board:** it does not ask for the goal again. It validates and reads the board, reports completed work and blockers, and finds the next viable task.
+
+This is what makes a project resumable across sessions, models, or harnesses: the project state is stored in files, not in a previous chat transcript.
+
+### 2. Preflight decides how the agent may work
+
+Preflight writes `environment/<runtime-id>.json`. It records only verified facts about the current harness: tools, capabilities, selectable models, autonomy policy, and optional multi-harness inventory.
+
+Facts can be `true`, `false`, or `unknown`. An unknown fact never satisfies a task's hard requirement.
+
+You choose one execution policy:
+
+- **autopilot** — the agent handles ordinary execution decisions itself;
+- **ask / CEO** — ask about strategy, scope, risk, and release;
+- **ask / manager** — also ask about material implementation and integration trade-offs;
+- **ask / full control** — ask about small execution decisions too.
+
+`autopilot` does not override human-only blockers, risky out-of-scope actions, or cross-harness task takeover approval.
+
+### 3. Multi-harness is shared coordination, not magic connectivity
+
+Single-harness is the default: work is allocated among verified models available in the current harness.
+
+For multi-harness projects, the board can describe known harnesses, their verified capabilities, and their preferred roles—for example, Codex for implementation and another harness for planning. This does not start or connect those harnesses automatically. They coordinate by opening the same project and reading the same `.agent-board/` files.
+
+### 4. Tasks are portable contracts
+
+Planning creates task JSON files in `.agent-board/tasks/`. A task specifies its objective, dependencies, hard requirements, acceptance criteria, and verification method.
+
+Hard requirements decide whether a harness can perform the task. `execution.preferred_runtime` is only a preference; it never overrides missing capabilities or tools. After plan acceptance, task contracts are frozen. Runtime facts belong in state, claims, runs, and reviews instead.
+
+### 5. Finding and claiming work
+
+`find_work.py` selects tasks that are READY, dependency-complete, unclaimed, and compatible with the current verified environment.
+
+It prefers work assigned to the current harness. If no such work exists but the current harness can perform a task preferred for another harness, it returns `ask_to_take_over`. The agent must explain that proposal and obtain explicit user approval before creating a claim.
+
+A claim is a lease stored in `.agent-board/claims/`, not a global lock. It records who is working, where, and since when. Active claims block automatic selection; stale or malformed claims require reconciliation instead of silent takeover.
+
+### 6. Execution, review, and evidence
+
+The agent performs the task according to its contract, ideally in an isolated Git worktree for code changes. It records actual runtime/model, result, commits, and verification evidence in `.agent-board/runs/`.
+
+Reviews are append-only records in `.agent-board/reviews/`. Tasks progress through explicit states such as `READY`, `CLAIMED`, `IN_PROGRESS`, `IN_REVIEW`, and `DONE`. A rejected review returns a task to `REVISION_REQUIRED`, rather than rewriting its original contract.
+
+### 7. The dashboard is read-only
+
+The dashboard is only a projection of the board:
+
+- `build_dashboard.py` creates `dashboard/index.html` and `dashboard/app.js`;
+- `serve_dashboard.py` exposes a loopback-only `/api/board` endpoint;
+- the browser refreshes current task, claim, run, review, and diagnostic data from JSON files.
+
+The dashboard never writes project state. It can be deleted and regenerated at any time; `.agent-board/` remains the single source of truth.
+
+### Skill package versus project board
+
+The installed `adaptive-orchestrator/` folder is reusable workflow tooling: `SKILL.md`, references, scripts, and optional UI metadata. Each real project gets its own `.agent-board/` directory containing that project's durable state.
+
 ### Concurrency invariants
 
 - Task contracts freeze after plan acceptance; runtime facts live in `state/`, `claims/`, `runs/`, `reviews/`.
@@ -120,18 +202,18 @@ adaptive-orchestrator/
 │       ├── state.schema.json
 │       └── task.schema.json
 ├── scripts/                    # Reference CLI (Python stdlib, no deps)
-    ├── init_board.py
-    ├── record_preflight.py
-    ├── validate_board.py
-    ├── find_work.py
-    ├── list_ready_tasks.py
-    ├── claim_task.py
-    ├── release_task.py
-    ├── transition_task.py
-    ├── record_run.py
-    ├── build_dashboard.py
-    ├── serve_dashboard.py
-    └── boardlib.py             # Shared board operations
+│   ├── init_board.py
+│   ├── record_preflight.py
+│   ├── validate_board.py
+│   ├── find_work.py
+│   ├── list_ready_tasks.py
+│   ├── claim_task.py
+│   ├── release_task.py
+│   ├── transition_task.py
+│   ├── record_run.py
+│   ├── build_dashboard.py
+│   ├── serve_dashboard.py
+│   └── boardlib.py             # Shared board operations
 └── tests/                      # Regression coverage for the bundled tools
 ```
 
