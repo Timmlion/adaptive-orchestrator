@@ -12,3 +12,6 @@ venv/
 
 # Local superpowers bootstrap notes
 adaptive-orchestrator/docs/
+
+# Isolated development worktrees
+worktrees/
