@@ -150,16 +150,31 @@ class BoardSnapshotTests(unittest.TestCase):
 
 
 class SkillContractTests(unittest.TestCase):
-    def test_skill_documents_adaptive_entry_and_live_dashboard(self):
+    def test_skill_documents_model_aware_approval_gate(self):
         skill = (Path(__file__).resolve().parents[1] / "SKILL.md").read_text()
         for phrase in (
             "What are we building?",
+            "Discover selectable models",
+            "allowed_models",
+            "research every selected model",
+            "plan_work.py",
+            "capability gaps",
+            "No claim before this gate",
+            "CEO",
+            "browser preview",
             "autopilot",
             "full_control",
             "ask_to_take_over",
             "serve_dashboard.py",
         ):
             self.assertIn(phrase, skill)
+
+    def test_root_readme_documents_plan_work_from_monorepo_root(self):
+        readme = (Path(__file__).resolve().parents[2] / "README.md").read_text()
+        self.assertIn(
+            "python3 adaptive-orchestrator/scripts/plan_work.py --runtime <runtime>",
+            readme,
+        )
 
 
 if __name__ == "__main__":
