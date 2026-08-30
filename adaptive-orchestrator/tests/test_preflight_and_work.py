@@ -199,6 +199,18 @@ class PreflightAndWorkTests(unittest.TestCase):
         self.assertIn("model_policy: research.sources.url", result.stderr)
         self.assertNotIn("Traceback", result.stderr)
 
+    def test_record_preflight_rejects_verified_research_url_with_c1_control(self):
+        with tempfile.TemporaryDirectory() as directory:
+            payload = self.valid_preflight_payload()
+            payload["model_policy"]["profiles"][0]["research"]["sources"][0]["url"] = "https://example.com/a\u0080b"
+            result = self.run_script(
+                "record_preflight.py", "--board", directory, "--json", json.dumps(payload)
+            )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("model_policy: research.sources.url", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+
     def test_plan_work_routes_models_and_reports_gaps_without_mutation(self):
         with tempfile.TemporaryDirectory() as directory:
             board = Path(directory)

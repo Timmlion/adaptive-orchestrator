@@ -1,6 +1,7 @@
 """Validation helpers for persisted environment model policies."""
 
 from datetime import datetime
+from unicodedata import category
 from urllib.parse import urlparse
 
 
@@ -53,7 +54,7 @@ def _validate_research(research):
         _exact_keys(source, {"url", "retrieved_at", "summary"}, "research.sources")
         if not _nonempty_string(source["url"]):
             raise ValueError("research.sources.url")
-        if any(character.isspace() or ord(character) < 32 or ord(character) == 127 for character in source["url"]):
+        if any(character.isspace() or category(character) == "Cc" for character in source["url"]):
             raise ValueError("research.sources.url")
         try:
             parsed_url = urlparse(source["url"])
