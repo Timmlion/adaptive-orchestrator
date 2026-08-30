@@ -175,6 +175,24 @@ class SkillContractTests(unittest.TestCase):
             "python3 adaptive-orchestrator/scripts/plan_work.py --runtime <runtime>",
             readme,
         )
+        self.assertIn("Do not run the placeholder", readme)
+        self.assertIn("user-confirmed research", readme)
+
+    def test_model_selection_documents_allowlist_as_the_first_routing_stage(self):
+        selection = (Path(__file__).resolve().parents[1] / "references" / "model-selection.md").read_text()
+        stages = (
+            "1. `allowed_models` allowlist;",
+            "2. verified model capabilities;",
+            "3. requested role;",
+            "4. sufficient quality tier;",
+            "5. cheapest relative cost",
+        )
+        positions = [selection.index(stage) for stage in stages]
+        self.assertEqual(positions, sorted(positions))
+
+    def test_boardlib_avoids_python_39_removeprefix(self):
+        boardlib = (Path(__file__).resolve().parents[1] / "scripts" / "boardlib.py").read_text()
+        self.assertNotIn(".removeprefix(", boardlib)
 
 
 if __name__ == "__main__":

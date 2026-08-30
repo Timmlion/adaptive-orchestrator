@@ -80,6 +80,7 @@ def board_snapshot(board):
    if blocked and isinstance(blocked[0],dict):
     reason=blocked[0].get('reason','invalid environment policy')
     if isinstance(reason,str) and reason.startswith('invalid environment policy: '):
-     diagnostics.append(f'environment/{runtime}.json: model_policy: {reason.removeprefix("invalid environment policy: ")}')
+     prefix='invalid environment policy: '
+     diagnostics.append(f'environment/{runtime}.json: model_policy: {reason[len(prefix):]}')
   plan[runtime]=projection
  return {'project':project,'tasks':tasks,'states':states,'claims':_records(board,'claims',diagnostics),'runs':_records(board,'runs',diagnostics),'reviews':_records(board,'reviews',diagnostics),'environments':environments,'plan':plan,'diagnostics':diagnostics}

@@ -56,7 +56,11 @@ Run these from the monorepo root:
 ```bash
 # Initialize a board and record confirmed preflight facts.
 python3 adaptive-orchestrator/scripts/init_board.py --name "Project" --goal "Goal" --autonomy autopilot
-PREFLIGHT_JSON='{"runtime_id":"local","harness":"Local","capabilities":{"coding":true},"tools":["shell"],"models":["example-model"],"model_policy":{"allowed_models":["example-model"],"profiles":[{"id":"example-model","roles":["fast_worker","coder","reasoner","critic","escalation"],"quality_tier":"advanced","relative_cost":"high","capabilities":{"coding":true},"family":"example","research":{"status":"verified","confidence":"high","sources":[{"url":"https://example.com/models/example-model","retrieved_at":"2026-08-30T00:00:00Z","summary":"Example verified profile."}]}}],"role_defaults":{"fast_worker":"example-model","coder":"example-model","reasoner":"example-model","critic":"example-model","escalation":"example-model"}},"autonomy":{"mode":"autopilot"},"multi_harness":{"enabled":false,"harnesses":[]}}'
+# Do not run the placeholder. Replace it with complete, user-confirmed research for this harness:
+# nonempty models and allowed_models; profiles with roles, quality, cost, capabilities, family,
+# and timestamped source links; every role default; autonomy; and multi_harness.
+PREFLIGHT_JSON='<replace with complete user-confirmed research JSON>'
+# Only run after replacing the placeholder with confirmed facts.
 python3 adaptive-orchestrator/scripts/record_preflight.py --json "$PREFLIGHT_JSON"
 
 # Freeze contracts and pass the model-aware plan gate before work.
