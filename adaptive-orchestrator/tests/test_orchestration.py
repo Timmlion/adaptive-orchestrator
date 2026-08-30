@@ -58,6 +58,19 @@ class RequirementMatchTests(unittest.TestCase):
 
 
 class BoardSnapshotTests(unittest.TestCase):
+    def routing_environment(self):
+        return {
+            "models": ["fast", "deep"],
+            "model_policy": {
+                "allowed_models": ["fast", "deep"],
+                "profiles": [
+                    {"id": "fast", "roles": ["fast_worker", "coder", "escalation"], "quality_tier": "standard", "relative_cost": "low", "capabilities": {"coding": True}, "family": "test", "research": {"status": "verified", "confidence": "high", "sources": [{"url": "https://example.com/fast", "retrieved_at": "2026-08-29T12:00:00Z", "summary": "Verified."}]}},
+                    {"id": "deep", "roles": ["reasoner", "critic"], "quality_tier": "advanced", "relative_cost": "high", "capabilities": {"coding": True}, "family": "test", "research": {"status": "unknown", "confidence": "medium", "sources": []}},
+                ],
+                "role_defaults": {"fast_worker": "fast", "coder": "fast", "reasoner": "deep", "critic": "deep", "escalation": "fast"},
+            },
+        }
+
     def test_reads_board_records_and_nested_runs_without_diagnostics(self):
         with tempfile.TemporaryDirectory() as directory:
             board = Path(directory)
@@ -103,18 +116,83 @@ class BoardSnapshotTests(unittest.TestCase):
         self.assertIn("tasks/TASK-a.json: expected object", snapshot["diagnostics"])
         self.assertIn("state/TASK-a.json: expected object", snapshot["diagnostics"])
 
+    def test_includes_environments_and_model_routes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            board = Path(directory)
+            environment = board / "environment" / "codex.json"
+            environment.parent.mkdir()
+            environment.write_text(json.dumps(self.routing_environment()))
+            for relative_path, record in {
+                "tasks/TASK-a.json": {"id": "TASK-a", "execution": {"model_role": "reasoner", "model_complexity": "high"}},
+                "state/TASK-a.json": {"status": "READY"},
+            }.items():
+                path = board / relative_path
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(json.dumps(record))
+
+            snapshot = board_snapshot(board)
+
+        self.assertEqual(snapshot["environments"]["codex"], self.routing_environment())
+        self.assertEqual(snapshot["plan"]["codex"]["status"], "ready")
+        self.assertEqual(snapshot["plan"]["codex"]["routes"][0]["model"], "deep")
+
+    def test_invalid_environment_has_blocked_plan_and_diagnostic(self):
+        with tempfile.TemporaryDirectory() as directory:
+            board = Path(directory)
+            environment = board / "environment" / "codex.json"
+            environment.parent.mkdir()
+            environment.write_text(json.dumps({"models": ["gpt"], "model_policy": {}}))
+
+            snapshot = board_snapshot(board)
+
+        self.assertEqual(snapshot["plan"]["codex"]["status"], "blocked")
+        self.assertTrue(any(item.startswith("environment/codex.json: model_policy") for item in snapshot["diagnostics"]))
+
 
 class SkillContractTests(unittest.TestCase):
-    def test_skill_documents_adaptive_entry_and_live_dashboard(self):
+    def test_skill_documents_model_aware_approval_gate(self):
         skill = (Path(__file__).resolve().parents[1] / "SKILL.md").read_text()
         for phrase in (
             "What are we building?",
+            "Discover selectable models",
+            "allowed_models",
+            "research every selected model",
+            "plan_work.py",
+            "capability gaps",
+            "No claim before this gate",
+            "CEO",
+            "browser preview",
             "autopilot",
             "full_control",
             "ask_to_take_over",
             "serve_dashboard.py",
         ):
             self.assertIn(phrase, skill)
+
+    def test_root_readme_documents_plan_work_from_monorepo_root(self):
+        readme = (Path(__file__).resolve().parents[2] / "README.md").read_text()
+        self.assertIn(
+            "python3 adaptive-orchestrator/scripts/plan_work.py --runtime <runtime>",
+            readme,
+        )
+        self.assertIn("Do not run the placeholder", readme)
+        self.assertIn("user-confirmed research", readme)
+
+    def test_model_selection_documents_allowlist_as_the_first_routing_stage(self):
+        selection = (Path(__file__).resolve().parents[1] / "references" / "model-selection.md").read_text()
+        stages = (
+            "1. `allowed_models` allowlist;",
+            "2. verified model capabilities;",
+            "3. requested role;",
+            "4. sufficient quality tier;",
+            "5. cheapest relative cost",
+        )
+        positions = [selection.index(stage) for stage in stages]
+        self.assertEqual(positions, sorted(positions))
+
+    def test_boardlib_avoids_python_39_removeprefix(self):
+        boardlib = (Path(__file__).resolve().parents[1] / "scripts" / "boardlib.py").read_text()
+        self.assertNotIn(".removeprefix(", boardlib)
 
 
 if __name__ == "__main__":

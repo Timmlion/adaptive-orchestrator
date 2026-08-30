@@ -1,2 +1,7 @@
 # Planning
-Create one Program Director and the minimum effective departments. Council: (1) leaders propose deliverables/dependencies/assumptions/constraints/risks/inputs/outputs; (2) leaders cross-review only affected domains; (3) Director resolves blocking conflicts and records decisions; (4) independent red-team attacks contradictions, missing dependencies, infeasible assumptions, undefined interfaces, cycles and unverifiable acceptance criteria. Freeze when blocking conflicts and critical unknowns are zero and critic/DAG pass. In supervised mode request human approval now.
+
+Create one Program Director and the smallest useful departments. Run proposal, affected-domain review, blocking-conflict resolution, and an independent red-team. The red-team checks contradictions, missing dependencies, infeasible assumptions, undefined interfaces, cycles, and unverifiable acceptance criteria.
+
+Freeze portable role, complexity, and capability task contracts only after conflicts and critical unknowns are resolved. Then run `plan_work.py --runtime <runtime>`. A capability gap, invalid model policy, or unroutable task blocks the plan and needs user resolution. Do not claim work before this gate passes.
+
+In `ask` mode, get the required approval. At `CEO` level, wait for explicit `start` before the first claim. In `autopilot`, show the approved summary and continue only when there are no blockers.
