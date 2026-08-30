@@ -56,7 +56,8 @@ Run these from the monorepo root:
 ```bash
 # Initialize a board and record confirmed preflight facts.
 python3 adaptive-orchestrator/scripts/init_board.py --name "Project" --goal "Goal" --autonomy autopilot
-python3 adaptive-orchestrator/scripts/record_preflight.py --json '{"runtime_id":"local","harness":"Local","capabilities":{},"tools":[],"models":[],"autonomy":{"mode":"autopilot"},"multi_harness":{"enabled":false,"harnesses":[]}}'
+PREFLIGHT_JSON='{"runtime_id":"local","harness":"Local","capabilities":{"coding":true},"tools":["shell"],"models":["example-model"],"model_policy":{"allowed_models":["example-model"],"profiles":[{"id":"example-model","roles":["fast_worker","coder","reasoner","critic","escalation"],"quality_tier":"advanced","relative_cost":"high","capabilities":{"coding":true},"family":"example","research":{"status":"verified","confidence":"high","sources":[{"url":"https://example.com/models/example-model","retrieved_at":"2026-08-30T00:00:00Z","summary":"Example verified profile."}]}}],"role_defaults":{"fast_worker":"example-model","coder":"example-model","reasoner":"example-model","critic":"example-model","escalation":"example-model"}},"autonomy":{"mode":"autopilot"},"multi_harness":{"enabled":false,"harnesses":[]}}'
+python3 adaptive-orchestrator/scripts/record_preflight.py --json "$PREFLIGHT_JSON"
 
 # Freeze contracts and pass the model-aware plan gate before work.
 python3 adaptive-orchestrator/scripts/plan_work.py --runtime <runtime>

@@ -304,6 +304,24 @@ class PreflightAndWorkTests(unittest.TestCase):
         self.assertIsNone(route)
         self.assertIn("required_model_capabilities", gap["reason"])
 
+    def test_route_task_reports_the_first_missing_capability_before_role_or_tier(self):
+        policy = self.routing_environment()["model_policy"]
+        for profile in policy["profiles"]:
+            profile["capabilities"] = {"browser": True, "vision": False}
+
+        route, gap = route_task({
+            "id": "TASK-capability-order",
+            "execution": {
+                "model_role": "critic",
+                "model_complexity": "high",
+                "required_model_capabilities": {"browser": True, "vision": True},
+            },
+        }, policy)
+
+        self.assertIsNone(route)
+        self.assertEqual(gap["capability"], "vision")
+        self.assertIn("required capability vision", gap["reason"])
+
     def test_task_schema_and_plan_work_use_routing_complexity_vocabulary(self):
         schema = json.loads((ROOT / "references" / "schemas" / "task.schema.json").read_text())
         self.assertEqual(schema["properties"]["execution"]["properties"]["model_complexity"]["enum"], ["low", "medium", "high"])

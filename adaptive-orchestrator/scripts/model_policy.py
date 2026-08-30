@@ -187,25 +187,39 @@ def route_task(task, policy):
         validate_model_policy(policy.get("allowed_models"), policy)
     except (AttributeError, KeyError, TypeError, ValueError) as error:
         return None, _gap(task, role, "invalid model policy: " + str(error))
-    candidates = []
-    checked = []
-    for profile in policy["profiles"]:
-        profile_id = profile["id"]
-        checked.append(profile_id)
-        if role not in profile["roles"]:
-            continue
-        if QUALITY_RANK[profile["quality_tier"]] < QUALITY_RANK[QUALITY_MINIMUM[complexity]]:
-            continue
-        missing = next((name for name in sorted(required_capabilities) if profile["capabilities"].get(name) is not True), None)
-        if missing is not None:
-            continue
-        candidates.append(profile)
-    if not candidates:
-        missing_capability = next(iter(sorted(required_capabilities)), None)
-        reason = "no eligible model for role " + role
+    candidates = [
+        profile for profile in policy["profiles"]
+        if profile["id"] in policy["allowed_models"]
+    ]
+    checked = [profile["id"] for profile in candidates]
+
+    capability_candidates = [
+        profile for profile in candidates
+        if all(profile["capabilities"].get(name) is True for name in required_capabilities)
+    ]
+    if not capability_candidates:
+        missing_capability = next(
+            (
+                name for name in sorted(required_capabilities)
+                if all(profile["capabilities"].get(name) is not True for profile in candidates)
+            ),
+            None,
+        )
+        reason = "no model has all required capabilities"
         if missing_capability is not None:
-            reason += " with required capability " + missing_capability
+            reason += "; required capability " + missing_capability + " is not verified"
         return None, _gap(task, role, reason, missing_capability, checked)
+
+    role_candidates = [profile for profile in capability_candidates if role in profile["roles"]]
+    if not role_candidates:
+        return None, _gap(task, role, "no capability-compatible model for role " + role, candidates_checked=checked)
+
+    candidates = [
+        profile for profile in role_candidates
+        if QUALITY_RANK[profile["quality_tier"]] >= QUALITY_RANK[QUALITY_MINIMUM[complexity]]
+    ]
+    if not candidates:
+        return None, _gap(task, role, "no capability-compatible model has sufficient quality", candidates_checked=checked)
     selected = min(candidates, key=lambda profile: (COST_RANK[profile["relative_cost"]], profile["id"]))
     return {
         "task": task.get("id"),
