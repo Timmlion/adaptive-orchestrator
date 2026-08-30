@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from boardlib import read, requirement_match
-from model_policy import route_task, validate_environment_policy
+from model_policy import plan_projection, route_task, validate_environment_policy
 
 
 SAFE_IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
@@ -138,16 +138,43 @@ except OSError as error:
     diagnostics.append(f"tasks: {error}")
     task_paths = []
 
+task_records, projection_states = [], {}
 for path in task_paths:
     relative = f"tasks/{path.name}"
     task = load_record(path, relative, diagnostics)
     if task is None:
         continue
+    task_records.append((path, task))
+    task_id = task.get("id")
+    if not safe_identifier(task_id):
+        continue
+    state = load_record(board / "state" / f"{task_id}.json", f"state/{task_id}.json", diagnostics)
+    if state is not None:
+        projection_states[task_id] = state
+
+projection = plan_projection(environment, [task for _, task in task_records], projection_states, args.runtime)
+if projection["status"] == "blocked":
+    for gap in projection["capability_gaps"]:
+        if safe_identifier(gap.get("task")):
+            rejected[gap["task"]] = gap["reason"]
+    emit({
+        "action": "no_eligible_work",
+        "reason": "model routing plan is blocked",
+        "rejected": rejected,
+        "diagnostics": diagnostics,
+        "claim_issues": claim_issues,
+        "capability_gaps": projection["capability_gaps"],
+        "blocked_tasks": projection["blocked_tasks"],
+        "research_warnings": projection["research_warnings"],
+    })
+    raise SystemExit
+
+for path, task in task_records:
     task_id = task.get("id")
     if not safe_identifier(task_id):
         rejected[str(task_id)] = "invalid task identifier"
         continue
-    state = load_record(board / "state" / f"{task_id}.json", f"state/{task_id}.json", diagnostics)
+    state = projection_states.get(task_id)
     if state is None:
         rejected[task_id] = "state unavailable or invalid"
         continue

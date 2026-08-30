@@ -53,6 +53,8 @@ def _validate_research(research):
         _exact_keys(source, {"url", "retrieved_at", "summary"}, "research.sources")
         if not _nonempty_string(source["url"]):
             raise ValueError("research.sources.url")
+        if any(character.isspace() or ord(character) < 32 or ord(character) == 127 for character in source["url"]):
+            raise ValueError("research.sources.url")
         try:
             parsed_url = urlparse(source["url"])
         except ValueError:

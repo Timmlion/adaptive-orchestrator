@@ -187,6 +187,18 @@ class PreflightAndWorkTests(unittest.TestCase):
         self.assertIn("model_policy", result.stderr)
         self.assertIn("research.sources.url", result.stderr)
 
+    def test_record_preflight_rejects_verified_research_url_with_spaces(self):
+        with tempfile.TemporaryDirectory() as directory:
+            payload = self.valid_preflight_payload()
+            payload["model_policy"]["profiles"][0]["research"]["sources"][0]["url"] = "https://example.com/not a valid URI"
+            result = self.run_script(
+                "record_preflight.py", "--board", directory, "--json", json.dumps(payload)
+            )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("model_policy: research.sources.url", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+
     def test_plan_work_routes_models_and_reports_gaps_without_mutation(self):
         with tempfile.TemporaryDirectory() as directory:
             board = Path(directory)
@@ -419,6 +431,33 @@ class PreflightAndWorkTests(unittest.TestCase):
         report = json.loads(result.stdout)
         self.assertIn("TASK-vision", report["rejected"])
         self.assertIn("capability", report["rejected"]["TASK-vision"])
+
+    def test_find_work_refuses_all_claims_when_ready_plan_has_routing_gap(self):
+        with tempfile.TemporaryDirectory() as directory:
+            board = Path(directory)
+            environment_path = board / "environment" / "codex.json"
+            environment_path.parent.mkdir(parents=True)
+            environment_path.write_text(json.dumps(self.routing_environment()))
+            self.write_task(board, {
+                "id": "TASK-routable", "title": "Routable", "dependencies": [], "requirements": {},
+                "execution": {"model_role": "coder"},
+            })
+            self.write_task(board, {
+                "id": "TASK-vision-gap", "title": "Vision gap", "dependencies": [], "requirements": {},
+                "execution": {"model_role": "coder", "required_model_capabilities": {"vision": True}},
+            })
+
+            plan_result = self.run_script("plan_work.py", "--board", str(board), "--runtime", "codex")
+            find_result = self.run_script("find_work.py", "--board", str(board), "--runtime", "codex")
+
+        self.assertEqual(plan_result.returncode, 1, plan_result.stderr)
+        self.assertEqual(json.loads(plan_result.stdout)["status"], "blocked")
+        self.assertEqual(find_result.returncode, 0, find_result.stderr)
+        report = json.loads(find_result.stdout)
+        self.assertEqual(report["action"], "no_eligible_work")
+        self.assertIn("blocked", report["reason"])
+        self.assertEqual(report["capability_gaps"][0]["task"], "TASK-vision-gap")
+        self.assertFalse((board / "claims").exists())
 
     def test_find_work_returns_preferred_eligible_task(self):
         with tempfile.TemporaryDirectory() as directory:
